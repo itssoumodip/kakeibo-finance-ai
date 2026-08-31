@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 32 33% 98%;
+    --foreground: 240 10% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 15%;
+    --primary: 250 60% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 240 5% 30%;
+    --muted: 30 10% 94%;
+    --muted-foreground: 240 5% 45%;
+    --accent: 250 60% 96%;
+    --border: 30 10% 92%;
+    --input: 0 0% 100%;
+    --ring: 250 60% 65%;
+    --radius: 1.5rem;
+    --donut-track: #f3f0ef;
+    --donut-fill: #c8c3e3;
+    --donut-fill-strong: #5f5b77;
+  }
+  .dark {
+    --background: 240 6% 10%;
+    --foreground: 0 0% 96%;
+    --card: 240 5% 14%;
+    --card-foreground: 0 0% 96%;
+    --primary: 250 55% 72%;
+    --primary-foreground: 240 10% 10%;
+    --secondary: 240 5% 18%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 240 5% 22%;
+    --muted-foreground: 240 4% 62%;
+    --border: 240 5% 20%;
+    --input: 240 5% 16%;
+    --ring: 250 55% 72%;
+    --donut-track: #2e2e33;
+    --donut-fill: #a99dd6;
+    --donut-fill-strong: #7a739e;
+  }
+  * { border-color: hsl(var(--border)); }
+  body {
+    @apply bg-[#fcf9f8] dark:bg-[#121214] text-foreground font-sans antialiased;
+    font-family: 'Geist', 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .neumorphic {
+    background: #ffffff;
+    box-shadow: 8px 8px 20px rgba(174,174,192,0.12), -8px -8px 20px rgba(255,255,255,0.9), inset 0 0 0 rgba(255,255,255,0);
+    border: 1px solid rgba(255,255,255,0.6);
+  }
+  .dark .neumorphic {
+    background: #232329;
+    box-shadow: 6px 6px 18px rgba(0,0,0,0.45), -3px -3px 10px rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .neumorphic-inset {
+    background: #f6f3f2;
+    box-shadow: inset 4px 4px 8px rgba(174,174,192,0.15), inset -4px -4px 8px rgba(255,255,255,0.9);
+  }
+  .dark .neumorphic-inset {
+    background: #1e1e22;
+    box-shadow: inset 4px 4px 10px rgba(0,0,0,0.5), inset -2px -2px 6px rgba(255,255,255,0.03);
+  }
+  .neumorphic-press:active { box-shadow: inset 4px 4px 8px rgba(174,174,192,0.2), inset -4px -4px 8px rgba(255,255,255,0.9); transform: scale(0.99); }
+  .dark .neumorphic-press:active { box-shadow: inset 4px 4px 10px rgba(0,0,0,0.5); }
+  .lavender { background: #e8e2ff; }
+  .dark .lavender { background: #3a3450; }
+  .mint { background: #d1f0e3; }
+  .dark .mint { background: #2a3a32; }
+  .coral { background: #ffe4de; }
+  .dark .coral { background: #3d2e2a; }
+  .sky { background: #dff0ff; }
+  .dark .sky { background: #2a3440; }
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #c9c5cd; border-radius: 9999px; }
+.dark ::-webkit-scrollbar-thumb { background: #3a3a40; }

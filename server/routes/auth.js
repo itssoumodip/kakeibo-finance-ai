@@ -1,0 +1,13 @@
+import express from 'express';
+import { register, login, me, updateMe, forgotPassword, resetPassword, changePassword } from '../controllers/authController.js';
+import { protect } from '../middleware/auth.js';
+import { validate, registerSchema, loginSchema } from '../utils/validate.js';
+const r = express.Router();
+r.post('/register', validate(registerSchema), register);
+r.post('/login', validate(loginSchema), login);
+r.post('/forgot-password', forgotPassword);
+r.post('/reset-password', resetPassword);
+r.get('/me', protect, me);
+r.patch('/me', protect, updateMe);
+r.post('/change-password', protect, changePassword);
+export default r;

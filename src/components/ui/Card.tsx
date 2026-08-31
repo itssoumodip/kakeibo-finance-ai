@@ -1,0 +1,3 @@
+export function Card({ children, className = '', inset = false, hover = false, ...props }: { children: React.ReactNode; className?: string; inset?: boolean; hover?: boolean; onClick?: any }) {
+  return <div {...props} className={`${inset ? 'neumorphic-inset' : 'neumorphic'} rounded-[24px] ${hover ? 'hover:shadow-[10px_10px_24px_rgba(174,174,192,0.16),-10px_-10px_24px_rgba(255,255,255,0.95)] hover:-translate-y-[1px] transition-all' : ''} ${className}`}>{children}</div>;
+}
