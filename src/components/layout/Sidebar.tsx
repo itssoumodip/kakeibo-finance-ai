@@ -18,7 +18,7 @@ export function Sidebar(){
     <>
       <aside className="hidden lg:flex w-[248px] shrink-0 flex-col bg-white dark:bg-zinc-900 border-r border-zinc-100 dark:border-zinc-800 sticky top-0 h-screen p-4">
         <div className="px-2 pt-2 pb-6">
-          <div className="text-[32px] font-extrabold tracking-tight leading-none text-[#5f5b77] dark:text-zinc-100" style={{ letterSpacing: '-0.03em' }}>MONEYY</div>
+          <div className="text-[32px] font-extrabold tracking-tight leading-none text-[#5f5b77] dark:text-zinc-100" style={{ letterSpacing: '-0.03em' }}>KAKEIBO</div>
           <div className="text-[11px] tracking-wide text-zinc-500 dark:text-zinc-400 -mt-1">AI Financial Assistant</div>
         </div>
         <NavLink to="/assistant" className={`mx-2 mb-4 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition ${loc.pathname === '/assistant' ? 'bg-[#e8e2ff] dark:bg-zinc-800 text-[#5f5b77]' : 'bg-[#e8e2ff]/70 dark:bg-zinc-800 text-[#5f5b77] dark:text-zinc-300 hover:bg-[#e8e2ff]'}`}>
