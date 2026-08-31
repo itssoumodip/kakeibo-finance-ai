@@ -102,14 +102,15 @@ export async function chatWithTools({ userId, messages }) {
   const day = now.getDate();
   const suffix = day%10===1&&day!==11 ? 'st' : day%10===2&&day!==12 ? 'nd' : day%10===3&&day!==13 ? 'rd' : 'th';
   const longDate = `${day}${suffix} ${now.toLocaleString('en-IN',{month:'long'})} ${now.getFullYear()}`;
-  const system = `You are Kakeibo — your Gen-Z finance buddy! 💰✨
+  const system = `You are Kakeibo — your Gen-Z finance buddy who ROASTS wasteful spends! 💰🔥
 Identity: ${dateStr} (${longDate}, current month: ${monthNow} / ${monthName}). You help track spends, investments, budgets — all in real ₹INR.
 Rules:
 - NEVER invent numbers. Always call a tool to get real data before answering about money. If tool returns 0/empty, say "No data for ${monthName}" (or the requested month) — NEVER say October 2024 or any other month unless user asked.
 - Default to ${monthNow} / ${monthName} when user doesn't specify month. Current date is ${dateStr} (${longDate}).
 - When user asks "whats date today", "what is today's date", "current date", answer exactly: "Today is ${longDate}." — no markdown ** around date, plain text only, add one emoji max.
-- Be concise, friendly, Gen-Z tone, use INR ₹. Do NOT wrap dates in **.
-- After createTransaction, confirm with category/merchant.
+- Tone: Gen-Z, savage but helpful financial coach. ROAST non-essential spends (burger, pizza, shopping, delivery) — call out waste, compare to home food/savings, give 1-line tip. E.g., "Bruh, ₹200 on a burger? That's 4 home meals 🍔📉 — cook at home and invest that 200, you'll thank yourself." Never just say "Enjoy your meal! 😋".
+- Be concise (2-3 lines max), use INR ₹. Do NOT wrap dates in **.
+- After createTransaction, confirm with category/merchant + 1-line roast/tip if it's Food/Shopping/Entertainment and amount >150.
 - For "what can you do" or greetings, reply exactly: "I’m Kakeibo — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀"
 - For empty data, suggest: "Try checking your bank app or UPI history, or log via tools like 'Took Rapido for ₹120'."`;
   const model = process.env.MISTRAL_MODEL || process.env.OPENAI_MODEL || 'mistral-small-latest';
@@ -162,13 +163,19 @@ async function fallback(messages, userId) {
 
   const amtMatch = messages[messages.length-1]?.content?.match(/₹?\s?(\d{2,6})/);
   const amt = amtMatch ? Number(amtMatch[1]) : null;
-  if (amt && /(rapido|uber|pizza|zomato|swiggy|invest|nifty|sip|shopping|bills)/i.test(last)) {
+  // handle burger/food explicitly for roast
+  if (amt && /(burger|rapido|uber|pizza|zomato|swiggy|invest|nifty|sip|shopping|bills|food)/i.test(last)) {
     let type='expense', category='Other', sub=last.slice(0,30);
     if (/invest|nifty|sip|gold|etf/i.test(last)) { type='investment'; category='Investment'; sub='SIP'; }
     else if (/rapido|uber|metro|auto/i.test(last)) { category='Transport'; sub= /rapido.*bike/i.test(last)?'Rapido Bike': /auto/i.test(last)?'Auto':'Transport'; }
-    else if (/pizza|zomato|swiggy|food|cafe|lunch/i.test(last)) { category='Food'; sub='Food'; }
+    else if (/burger|pizza|zomato|swiggy|food|cafe|lunch/i.test(last)) { category='Food'; sub= /burger/i.test(last) ? 'Burger' : 'Food'; }
     const result = await executeTool('createTransaction', { amount: amt, type, category, subcategory: sub, merchant: sub }, userId);
-    return { content: `Added ₹${amt} · ${category}${sub? ' · '+sub:''}\n${result.message || ''}`.trim() };
+    let roast = '';
+    if (category==='Food' && amt>=150) {
+      if (/burger/i.test(last)) roast = `\nBruh, ₹${amt} on a burger? 🍔 That's ${Math.round(amt/50)} home meals — cook at home and invest the rest 📉.`;
+      else roast = `\n₹${amt} on ${sub}? Could've been home food — save that cash for SIP.`;
+    } else if (category==='Shopping' && amt>=500) roast = `\nShopping spree? ₹${amt} gone — future you is crying.`;
+    return { content: `Logged ₹${amt} · ${category}${sub? ' · '+sub:''}${roast}\n${result.message || ''}`.trim() };
   }
   if (/where.*money|spending too much|overspend|where did my money go/.test(last)) {
     const r = await executeTool('getCategorySpending', {}, userId);

@@ -99,8 +99,8 @@ export default function BudgetsPage(){
       </Card>
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4" onClick={()=>setShowAdd(false)}>
-          <Card className="w-full max-w-sm p-6" onClick={(e:any)=>e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-zinc-900/40 backdrop-blur-md flex items-center justify-center p-4" onClick={()=>setShowAdd(false)}>
+          <Card className="w-full max-w-sm p-6 shadow-2xl" onClick={(e:any)=>e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4"><h3 className="font-semibold">{edit ? 'Edit budget' : 'New budget'}</h3><button onClick={()=>setShowAdd(false)} className="w-8 h-8 rounded-full neumorphic flex items-center justify-center"><X size={14} /></button></div>
             <form onSubmit={handleUpsert} className="space-y-3">
               <select value={form.category} onChange={e=>setForm({...form, category:e.target.value})} className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none">

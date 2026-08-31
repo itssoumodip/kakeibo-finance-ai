@@ -105,8 +105,8 @@ export default function TransactionsPage(){
         </div>
       </div>
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-          <Card className="w-full max-w-md p-6" onClick={(e: any) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-zinc-900/40 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+          <Card className="w-full max-w-md p-6 shadow-2xl" onClick={(e: any) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4"><h3 className="font-semibold">{editing ? 'Edit transaction' : 'Add transaction'}</h3><button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full neumorphic flex items-center justify-center"><X size={14} /></button></div>
             <form className="space-y-3" onSubmit={async e => { e.preventDefault(); try{ const payload={ amount: Number(form.amount), type: form.type, category: form.category, subcategory: form.subcategory, merchant: form.merchant || form.subcategory || form.category, paymentMethod: form.paymentMethod }; if(editing && editing._id && getToken()){ await api.updateTx(editing._id, payload); showToast('Updated'); } else { if(getToken()){ await api.createTx(payload); showToast('Added'); } else { showToast('Demo — login to save'); }} fetchTx(); }catch(ex:any){ showToast(ex.message);} setShowModal(false); }}>
               <input value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="Amount" type="number" required className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
