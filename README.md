@@ -1,4 +1,4 @@
-# Moneyy — AI Financial Assistant 💰
+# KAKEIBO — AI Financial Assistant 💰 (家計簿)
 
 > **Talk to your money. Understand your money. Control your money.**
 
@@ -154,7 +154,7 @@ npm start        # node server.js
 
 - **Frontend:** Vercel/Netlify — set `VITE_API_URL` to deployed API
 - **Backend:** Render/Fly/Atlas — set `MONGODB_URI`, `JWT_SECRET`, `MISTRAL_API_KEY`, `FRONTEND_URL`
-- **DB:** Atlas → `moneyy` auto-created on first register
+- **DB:** Atlas → `moneyy` (or `kakeibo`) auto-created on first register
 
 ## 🔐 Notes
 
@@ -167,4 +167,4 @@ npm start        # node server.js
 MIT — built for portfolio. PRs welcome.
 
 ---
-**Moneyy** — *Talk to your money.*
+**Kakeibo (家計簿)** — *Talk to your money.* — Japanese budgeting, Gen-Z AI.

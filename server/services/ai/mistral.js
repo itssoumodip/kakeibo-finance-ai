@@ -102,7 +102,7 @@ export async function chatWithTools({ userId, messages }) {
   const day = now.getDate();
   const suffix = day%10===1&&day!==11 ? 'st' : day%10===2&&day!==12 ? 'nd' : day%10===3&&day!==13 ? 'rd' : 'th';
   const longDate = `${day}${suffix} ${now.toLocaleString('en-IN',{month:'long'})} ${now.getFullYear()}`;
-  const system = `You are Moneyy — your Gen-Z finance buddy! 💰✨
+  const system = `You are Kakeibo — your Gen-Z finance buddy! 💰✨
 Identity: ${dateStr} (${longDate}, current month: ${monthNow} / ${monthName}). You help track spends, investments, budgets — all in real ₹INR.
 Rules:
 - NEVER invent numbers. Always call a tool to get real data before answering about money. If tool returns 0/empty, say "No data for ${monthName}" (or the requested month) — NEVER say October 2024 or any other month unless user asked.
@@ -110,7 +110,7 @@ Rules:
 - When user asks "whats date today", "what is today's date", "current date", answer exactly: "Today is ${longDate}." — no markdown ** around date, plain text only, add one emoji max.
 - Be concise, friendly, Gen-Z tone, use INR ₹. Do NOT wrap dates in **.
 - After createTransaction, confirm with category/merchant.
-- For "what can you do" or greetings, reply exactly: "I’m Moneyy — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀"
+- For "what can you do" or greetings, reply exactly: "I’m Kakeibo — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀"
 - For empty data, suggest: "Try checking your bank app or UPI history, or log via tools like 'Took Rapido for ₹120'."`;
   const model = process.env.MISTRAL_MODEL || process.env.OPENAI_MODEL || 'mistral-small-latest';
 
@@ -157,7 +157,7 @@ async function fallback(messages, userId) {
     return { content: `Today is ${longDate}.` };
   }
   if(/what can you do|who are you|help|^hi$|^hello$/.test(last)){
-    return { content: `I’m Moneyy — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀` };
+    return { content: `I’m Kakeibo — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀` };
   }
 
   const amtMatch = messages[messages.length-1]?.content?.match(/₹?\s?(\d{2,6})/);
@@ -177,14 +177,14 @@ async function fallback(messages, userId) {
     return { content: `👀 Your biggest spending categories for ${monthName}:\n${top}` };
   }
   if (/no spends|where.*money|october/.test(last)) {
-    return { content: `Oops! No spends recorded for ${monthName} (${monthNow}) 😬 Did you pay via cash, another bank, or forgot to log? I’m Moneyy — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
+    return { content: `Oops! No spends recorded for ${monthName} (${monthNow}) 😬 Did you pay via cash, another bank, or forgot to log? I’m Kakeibo — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
   }
   if (/invest/i.test(last)) {
     const r = await executeTool('getInvestmentSummary', {}, userId);
-    if(!r.total) return { content: `No investments for ${monthName} yet. Try “Invested ₹500 in Nifty 50 SIP” and I’ll log it live. I’m Moneyy 💰✨` };
+    if(!r.total) return { content: `No investments for ${monthName} yet. Try “Invested ₹500 in Nifty 50 SIP” and I’ll log it live. I’m Kakeibo 💰✨` };
     return { content: `💰 You invested ₹${r.total} this month across ${r.count} transactions for ${monthName}.` };
   }
   const s = await executeTool('getMonthlySummary', {}, userId);
-  if(!s.income && !s.expenses) return { content: `Oops! No data for ${monthName} (${monthNow}). Did you track your spends this month? 😅 I’m Moneyy — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
+  if(!s.income && !s.expenses) return { content: `Oops! No data for ${monthName} (${monthNow}). Did you track your spends this month? 😅 I’m Kakeibo — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
   return { content: `Income ₹${s.income} · Spent ₹${s.expenses} · Invested ₹${s.investments} · Available ₹${s.available} for ${monthName}. Ask me to add a transaction like "Took Rapido for ₹120".` };
 }

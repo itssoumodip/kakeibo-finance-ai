@@ -10,7 +10,7 @@ export default function Login(){
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#fcf9f8] dark:bg-zinc-900 p-4">
       <div className="w-full max-w-md neumorphic rounded-[24px] p-8">
-        <div className="text-center mb-6"><div className="text-[28px] font-extrabold tracking-tight text-[#5f5b77]">MONEYY</div><div className="text-sm text-zinc-500">AI Financial Assistant</div></div>
+        <div className="text-center mb-6"><div className="text-[28px] font-extrabold tracking-tight text-[#5f5b77]">KAKEIBO</div><div className="text-sm text-zinc-500">AI Financial Assistant</div></div>
         <h1 className="text-xl font-semibold mb-1">Welcome back</h1><p className="text-sm text-zinc-500 mb-6">Login to continue to your finances.</p>
         <form onSubmit={submit} className="space-y-3">
           <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" required className="w-full neumorphic-inset rounded-full px-4 py-3 text-sm outline-none" />

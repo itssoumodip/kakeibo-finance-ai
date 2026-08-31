@@ -74,7 +74,7 @@ export default function AssistantPage(){
   };
 
   useEffect(()=>{
-    if(!getToken()){ setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180”' }]); setLoading(false); return; }
+    if(!getToken()){ setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180” — I’m Kakeibo 💰✨' }]); setLoading(false); return; }
     (async()=>{
       try{
         const sessions:any = await fetch(`${import.meta.env.VITE_API_URL||'http://localhost:5000'}/api/chat/sessions`, { headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` }}).then(r=>r.json());
