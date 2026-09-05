@@ -112,6 +112,10 @@
 html { overscroll-behavior-y: none; }
 body { overscroll-behavior-y: none; }
 
+/* hide scrollbars where marked (chat list, prompt chips) */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: #c9c5cd; border-radius: 9999px; }

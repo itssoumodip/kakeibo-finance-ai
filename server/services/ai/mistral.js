@@ -44,7 +44,10 @@ async function executeTool(name, args, userId) {
       const q = { user: userId };
       if (args.type) q.type = args.type;
       if (args.category) q.category = args.category;
-      if (args.search) q.merchant = { $regex: args.search, $options:'i' };
+      if (args.search) {
+        const rx = { $regex: args.search, $options:'i' };
+        q.$or = [{ merchant: rx }, { subcategory: rx }, { category: rx }];
+      }
       const docs = await Transaction.find(q).sort({ date:-1 }).limit(args.limit||10).lean();
       return { transactions: docs };
     }
@@ -158,6 +161,7 @@ ROAST RULES (your signature, do it properly):
 
 DATA RULES:
 - NEVER invent numbers. Call a tool before answering anything about money. Empty result = "nothing logged" in one short line. Never a wrong month, never a lecture.
+- If the user reports a spend WITHOUT an amount ("ate fuchka", "bought shoes"), do NOT answer stats. Ask one short question naming the item ("Fuchka 😋 How much was it?"). If they reply with just a number next, log it against that item.
 - "what's the date / today" → "Today is ${longDate} 📅". Nothing else.
 - Greetings / "what can you do" → one short intro with a logging example. Never a long canned paragraph.`;
   const model = process.env.MISTRAL_MODEL || process.env.OPENAI_MODEL || 'mistral-small-latest';
@@ -195,17 +199,18 @@ DATA RULES:
 // Local fallback (used when Mistral is down/rate-limited) — same human voice,
 // real data from tools, zero filler.
 function roastTx({ amount: amt, category, sub }) {
+  const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
   if (category === 'Food' && amt >= 150) {
     const meals = Math.max(2, Math.round(amt / 50));
-    if (/burger/i.test(sub)) return ` Bruh, ₹${amt} on a burger? 🍔 That's ~${meals} home meals. Worth it? …okay, maybe once 😭`;
-    if (/pizza/i.test(sub)) return ` Pizza for ₹${amt}? 🍕 Elite taste, broke-wallet energy. Tiffin week, please 😤`;
+    if (/burger/i.test(sub)) return ` Bruh, ${inr(amt)} on a burger? 🍔 That's ~${meals} home meals. Worth it? …okay, maybe once 😭`;
+    if (/pizza/i.test(sub)) return ` Pizza for ${inr(amt)}? 🍕 Elite taste, broke-wallet energy. Tiffin week, please 😤`;
     if (/cafe|coffee|chai/i.test(sub)) return ` Cafe runs add up fast ☕. Home brew saves you this exact amount 👀`;
-    return ` ₹${amt} on ${sub}? 😋 Tasty but pricey though. Two home meals cover this.`;
+    return ` ${inr(amt)} on ${sub}? 😋 Tasty but pricey though. Two home meals cover this.`;
   }
-  if (category === 'Shopping' && amt >= 500) return ` Shopping spree, huh? ₹${amt} gone 🛍️. Hope it wasn't another "sale" trap 😏`;
-  if (category === 'Entertainment' && amt >= 300) return ` ₹${amt} on fun? 🎬 Allowed. Joy is a budget category too, just not every weekend 😌`;
-  if (category === 'Transport' && amt >= 200 && /cab|uber|ola/i.test(sub)) return ` Cab for ₹${amt}? 🚕 Metro exists, bestie. Just saying 👀`;
-  if (amt >= 1000) return ` ₹${amt} in one shot? 💸 Big moves. Hope it was worth it.`;
+  if (category === 'Shopping' && amt >= 500) return ` Shopping spree, huh? ${inr(amt)} gone 🛍️. Hope it wasn't another "sale" trap 😏`;
+  if (category === 'Entertainment' && amt >= 300) return ` ${inr(amt)} on fun? 🎬 Allowed. Joy is a budget category too, just not every weekend 😌`;
+  if (category === 'Transport' && amt >= 200 && /cab|uber|ola/i.test(sub)) return ` Cab for ${inr(amt)}? 🚕 Metro exists, bestie. Just saying 👀`;
+  if (amt >= 1000) return ` ${inr(amt)} in one shot? 💸 Big moves. Hope it was worth it.`;
   return '';
 }
 
@@ -233,27 +238,74 @@ async function fallback(messages, userId) {
   if(/what can you do|who are you|help|^hi$|^hello$|^hey$/.test(last)){
     return { content: `Hey! I'm Kakeibo 💰. I track your spends, budgets and SIPs. Just say what you spent, like "Rapido ₹120", and I'll log it.` };
   }
+  if(/^(thanks|thank you|thx|bye|ok|okay|cool|nice|great|awesome)\b/.test(last)){
+    return { content: `Anytime 😎. Ping me when money moves.` };
+  }
 
-  const amtMatch = lastRaw.match(/₹?\s?(\d{2,6})/);
-  const amt = amtMatch ? Number(amtMatch[1]) : null;
-  if (amt && /(burger|pizza|zomato|swiggy|rapido|uber|ola|metro|auto|cab|invest|nifty|sip|gold|etf|shopping|movie|food|coffee|chai|rent|bill)/i.test(last)) {
+  const FOOD_WORDS = /burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|roll|noodles|pasta|sandwich|cake|zomato|swiggy|food|cafe|coffee|chai|tea|juice|lunch|dinner|breakfast|snacks/i;
+  const SPEND_GATE = /(burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|zomato|swiggy|rapido|uber|ola|metro|auto|cab|invest|nifty|sip|gold|etf|shopping|shoe|shirt|cloth|dress|myntra|amazon|flipkart|movie|netflix|game|party|concert|cafe|coffee|chai|tea|juice|lunch|dinner|breakfast|food|electricity|recharge|emi|rent|bill)/i;
+  const SPEND_VERBS = /\b(eat|ate|eaten|had|drink|drank|buy|bought|spent|paid|order|ordered|took|watched)\b/i;
+
+  const logSpendFromText = async (amt, text) => {
+    const t = text.toLowerCase();
     let type='expense', category='Other', sub='Spend';
-    if (/invest|nifty|sip|gold|etf|mf|mutual/i.test(last)) { type='investment'; category='Investment'; sub = /nifty/i.test(last) ? 'Nifty 50 SIP' : /gold/i.test(last) ? 'Gold ETF' : 'SIP'; }
-    else if (/rapido|uber|ola|metro|auto|cab|taxi/i.test(last)) { category='Transport'; sub = /rapido/i.test(last) ? 'Rapido' : /metro/i.test(last) ? 'Metro' : /auto/i.test(last) ? 'Auto' : 'Cab'; }
-    else if (/burger|pizza|zomato|swiggy|food|cafe|coffee|chai|lunch|dinner|biryani/i.test(last)) { category='Food'; sub = /burger/i.test(last) ? 'Burger' : /pizza/i.test(last) ? 'Pizza' : /coffee|chai|cafe/i.test(last) ? 'Cafe' : 'Food'; }
-    else if (/movie|netflix|game|concert|party/i.test(last)) { category='Entertainment'; sub='Fun'; }
-    else if (/shirt|shoes|amazon|flipkart|myntra|shopping|clothes/i.test(last)) { category='Shopping'; sub='Shopping'; }
-    else if (/rent|bill|electricity|recharge|emi/i.test(last)) { category='Bills'; sub='Bills'; }
+    if (/invest|nifty|sip|gold|etf|mf|mutual/i.test(t)) { type='investment'; category='Investment'; sub = /nifty/i.test(t) ? 'Nifty 50 SIP' : /gold/i.test(t) ? 'Gold ETF' : 'SIP'; }
+    else if (/rapido|uber|ola|metro|auto|cab|taxi/i.test(t)) { category='Transport'; sub = /rapido/i.test(t) ? 'Rapido' : /metro/i.test(t) ? 'Metro' : /auto/i.test(t) ? 'Auto' : 'Cab'; }
+    else if (FOOD_WORDS.test(t)) { category='Food'; sub = /burger/i.test(t) ? 'Burger' : /pizza/i.test(t) ? 'Pizza' : /coffee|chai|cafe|tea/i.test(t) ? 'Cafe' : (/fuchka|puchka|panipuri/i.test(t) ? 'Fuchka' : 'Food'); }
+    else if (/movie|netflix|game|concert|party/i.test(t)) { category='Entertainment'; sub='Fun'; }
+    else if (/shirt|shoe|amazon|flipkart|myntra|shopping|cloth|dress/i.test(t)) { category='Shopping'; sub='Shopping'; }
+    else if (/rent|bill|electricity|recharge|emi/i.test(t)) { category='Bills'; sub='Bills'; }
     await executeTool('createTransaction', { amount: amt, type, category, subcategory: sub, merchant: sub }, userId);
     if (type === 'investment') return { content: `Logged ${inr(amt)} → ${sub} ⚡ Future you says thanks. Keep the streak going.` };
     if (category === 'Bills') return { content: `Logged ${inr(amt)} for ${sub} ✅ Adulting done right.` };
     return { content: `Logged ${inr(amt)} · ${sub} ✅${roastTx({ amount: amt, category, sub })}` };
+  };
+
+  const amtMatch = lastRaw.match(/₹?\s?(\d{2,6})/);
+  const amt = amtMatch ? Number(amtMatch[1]) : null;
+  if (amt && SPEND_GATE.test(last)) {
+    return await logSpendFromText(amt, lastRaw);
+  }
+  if (amt && !SPEND_GATE.test(last)) {
+    // Bare number follow-up? ("How much was it?" → "40") Log against previous item.
+    const hist = [...messages].reverse();
+    const prevAi = hist.find(m => m.role === 'assistant');
+    const prevUser = hist.find(m => m.role === 'user' && m.content !== lastRaw);
+    if (prevAi && /how much/i.test(prevAi.content || '') && prevUser && SPEND_GATE.test(prevUser.content)) {
+      return await logSpendFromText(amt, prevUser.content);
+    }
+  }
+  // "What did I spend on X?" is a QUESTION about the past — must run before the
+  // no-amount branch below, or queries get mistaken for new spends.
+  const spentOn = lastRaw.match(/spen[dt]\s+(?:so far\s+)?on\s+([a-z'’]+)/i);
+  if (spentOn) {
+    const term = spentOn[1].trim();
+    const r = await executeTool('getTransactions', { search: term, type: 'expense', limit: 20 }, userId);
+    const docs = r.transactions || [];
+    if (!docs.length) return { content: `Nothing on ${term} this month 👀. Sure about the name?` };
+    const total = docs.reduce((s, t) => s + t.amount, 0);
+    return { content: `${inr(total)} on ${term} across ${docs.length} spend${docs.length > 1 ? 's' : ''} this month 🧾.` };
+  }
+  if (!amt && (FOOD_WORDS.test(last) || SPEND_VERBS.test(last))) {
+    // Spend reported with no amount — ask, like a human would. Never stat-dump here.
+    const item = (lastRaw.match(FOOD_WORDS) || [])[0];
+    const name = item ? item[0].toUpperCase() + item.slice(1).toLowerCase() : null;
+    return { content: name ? `${name} 😋 How much was it?` : `Got it 👍 How much did that cost?` };
   }
   if (/where.*money|spending too much|overspend|where did my money go|spent.*most|biggest/.test(last)) {
     const r = await executeTool('getCategorySpending', {}, userId);
     if(!r.categories?.length) return { content: `Nothing logged for ${monthName} yet 👀. Tell me a spend and I'll start tracking.` };
     const top = r.categories.slice(0,3).map(c=> `${c.category} ${inr(c.amount)}`).join(', ');
-    return { content: `${top} 📊${roastTop(r.categories[0])}` };
+    let verdict = '';
+    if (/overspend|too much/.test(last)) {
+      const s = await executeTool('getMonthlySummary', {}, userId);
+      const ratio = s.income ? s.expenses / s.income : 0;
+      verdict = !s.income ? ` Log your income and I'll give you a real verdict 👀.`
+        : ratio > 0.9 ? ` Yeah, you're overspending ⚠️. Time to cut something.`
+        : ratio > 0.7 ? ` Bit spicy but still under control 👀.`
+        : ` Nah, you're chilling ✅.`;
+    }
+    return { content: `${top} 📊${roastTop(r.categories[0])}${verdict}` };
   }
   if (/invest|sip|portfolio/.test(last)) {
     const r = await executeTool('getInvestmentSummary', {}, userId);
@@ -264,7 +316,10 @@ async function fallback(messages, userId) {
     const r = await executeTool('getBudgetStatus', {}, userId);
     if(!r.budgets?.length) return { content: `No budgets set for ${monthName} 👀. Set one on the Budgets page and I'll guard it like a bouncer 🛡️` };
     const worst = [...r.budgets].sort((a,b)=> (b.spent/b.limit) - (a.spent/a.limit))[0];
-    const lines = r.budgets.slice(0,3).map(b=> `${b.category} ${inr(b.spent)}/${inr(b.limit)}`).join(', ');
+    const lines = r.budgets.slice(0,3).map(b=> {
+      const pct = b.limit ? Math.round((b.spent / b.limit) * 100) : 0;
+      return `${b.category} ${inr(b.spent)}/${inr(b.limit)} (${pct}%)`;
+    }).join(', ');
     const warn = worst && worst.spent / worst.limit > 0.85 ? ` ⚠️ ${worst.category} is almost maxed. Chill on it for a few days.` : '';
     return { content: `${lines}.${warn}` };
   }

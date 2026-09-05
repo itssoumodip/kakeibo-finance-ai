@@ -112,7 +112,8 @@ export default function AssistantPage(){
   };
 
   useEffect(()=>{
-    if(!getToken()){ setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180” — I’m Kakeibo 💰✨' }]); setLoading(false); return; }
+    // Fresh chats start empty — no greeting bubble. Real history still loads.
+    if(!getToken()){ setMessages([]); setLoading(false); return; }
     (async()=>{
       try{
         const sessions:any = await fetch(`${import.meta.env.VITE_API_URL||'http://localhost:5000'}/api/chat/sessions`, { headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` }}).then(r=>r.json());
@@ -121,12 +122,12 @@ export default function AssistantPage(){
           setSessionId(latest._id);
           const msgs:any = await fetch(`${import.meta.env.VITE_API_URL||'http://localhost:5000'}/api/chat/sessions/${latest._id}/messages`, { headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` }}).then(r=>r.json());
           if(msgs?.length) setMessages(msgs.map((m:any)=>({ role: m.role==='assistant'?'ai':'user', text: m.content, _id:m._id })));
-          else setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180” or “Where am I spending too much?”' }]);
+          else setMessages([]);
         } else {
-          setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180” or “Where am I spending too much?”' }]);
+          setMessages([]);
         }
       } catch{
-        setMessages([{ role:'ai', text:'Ask me anything about your money. Try “Took Rapido for ₹180”' }]);
+        setMessages([]);
       } finally{ setLoading(false); }
     })();
   },[]);
@@ -189,13 +190,13 @@ export default function AssistantPage(){
     <div className="flex flex-col h-[calc(100vh-40px)] pb-20 lg:pb-0">
       <div className="flex items-start justify-between"><Header title="Your Finance AI" subtitle="Ask me anything about your money." /><button onClick={clearChat} className="mt-6 flex items-center gap-1 text-xs px-3 py-1 rounded-full neumorphic hover:bg-zinc-50"><Trash2 size={12} /> New chat</button></div>
       {toast && <div className="fixed top-4 right-4 z-50 bg-zinc-900 text-white text-xs px-3 py-1.5 rounded-full">{toast}</div>}
-      <div ref={listRef} className="flex-1 overflow-y-auto space-y-4 px-1 py-2">
+      <div ref={listRef} className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-none space-y-4 px-1 py-2">
         {messages.map((m, i) => (
           <div key={i} className={`gsap-msg flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-[#e8e2ff] flex items-center justify-center mr-2 shrink-0 mt-1"><Bot size={14} /></div>}
-            <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-white neumorphic rounded-br-sm' : 'bg-[#e8e2ff] rounded-bl-sm text-[#5f5b77]'}`}>
-              <div>{m.text}</div>
-              {m.fileName && <div className="mt-1 text-xs opacity-60 flex items-center gap-1"><FileText size={10} /> {m.fileName}</div>}
+            <div className={`max-w-[78%] min-w-0 rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-white neumorphic rounded-br-sm' : 'bg-[#e8e2ff] rounded-bl-sm text-[#5f5b77]'}`}>
+              <div className="break-words">{m.text}</div>
+              {m.fileName && <div className="mt-1 text-xs opacity-60 flex items-center gap-1 min-w-0"><FileText size={10} className="shrink-0" /> <span className="truncate">{m.fileName}</span></div>}
               {m.card && (
                 <div className="mt-3 bg-white rounded-full flex items-center justify-between px-3 py-2 shadow-sm">
                   <span className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center"><Car size={12} /></span><span><div className="text-xs font-semibold leading-none">{m.card.name}</div><div className="text-[11px] text-zinc-500">{m.card.cat}</div></span></span>
@@ -229,7 +230,7 @@ export default function AssistantPage(){
         <div className="flex items-center gap-2 neumorphic rounded-full px-2 py-2">
           <input ref={fileInputRef} type="file" accept=".pdf,.csv,.xlsx,.xls,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFile} />
           <button onClick={()=> fileInputRef.current?.click()} className="w-8 h-8 rounded-full hover:bg-zinc-50 flex items-center justify-center text-zinc-600 hover:text-[#5f5b77]" title="Attach document"><Paperclip size={16} /></button>
-          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(input)} placeholder="Tell me what you spent..." className="flex-1 bg-transparent outline-none text-sm placeholder:text-zinc-400" />
+          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(input)} placeholder="Tell me what you spent..." className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:text-zinc-400" />
           <button onClick={toggleVoice} className={`w-8 h-8 rounded-full flex items-center justify-center transition ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'hover:bg-zinc-50 text-zinc-600'}`} title={isRecording ? 'Stop recording' : 'Voice input'}>{isRecording ? <MicOff size={16} /> : <Mic size={16} />}</button>
           <button onClick={() => send(input)} disabled={sending || (!input.trim() && !attachedFile)} className="w-9 h-9 rounded-full bg-[#5f5b77] text-white flex items-center justify-center shadow disabled:opacity-40"><Send size={14} /></button>
         </div>
