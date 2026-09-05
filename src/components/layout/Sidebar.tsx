@@ -1,19 +1,31 @@
+import { memo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Wallet, TrendingUp, BarChart3, Bot, FileText, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Receipt, Wallet, TrendingUp, BarChart3, Bot, FileText, Settings, LogOut, Download } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
-export function Sidebar(){
+// Hoisted to module scope — was re-created on every render + every route change
+const LINKS = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/transactions', label: 'Transactions', icon: Receipt },
+  { to: '/budgets', label: 'Budgets', icon: Wallet },
+  { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/assistant', label: 'AI Assistant', icon: Bot },
+  { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/install', label: 'Get the App', icon: Download },
+];
+const MOBILE_LINKS = [
+  { to: '/', icon: LayoutDashboard, label: 'Home' },
+  { to: '/transactions', icon: Receipt, label: 'Tx' },
+  { to: '/assistant', icon: Bot, label: 'AI', prominent: true },
+  { to: '/analytics', icon: BarChart3, label: 'Stats' },
+  { to: '/settings', icon: Settings, label: 'You' },
+];
+
+export const Sidebar = memo(function Sidebar(){
   const loc = useLocation();
   const { user, logout } = useAuth();
-  const links = [
-    { to: '/', label: 'Overview', icon: LayoutDashboard },
-    { to: '/transactions', label: 'Transactions', icon: Receipt },
-    { to: '/budgets', label: 'Budgets', icon: Wallet },
-    { to: '/investments', label: 'Investments', icon: TrendingUp },
-    { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-    { to: '/assistant', label: 'AI Assistant', icon: Bot },
-    { to: '/reports', label: 'Reports', icon: FileText },
-  ];
+  const links = LINKS;
   return (
     <>
       <aside className="hidden lg:flex w-[248px] shrink-0 flex-col bg-white dark:bg-zinc-900 border-r border-zinc-100 dark:border-zinc-800 sticky top-0 h-screen p-4">
@@ -40,14 +52,8 @@ export function Sidebar(){
           <button onClick={logout} className="flex items-center gap-3 rounded-full px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-400 hover:bg-red-50 hover:text-red-600"><LogOut size={18} /> Logout</button>
         </div>
       </aside>
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-zinc-900/90 backdrop-blur border-t border-zinc-100 dark:border-zinc-800 flex justify-around py-2 pb-3">
-        {[
-          { to: '/', icon: LayoutDashboard, label: 'Home' },
-          { to: '/transactions', icon: Receipt, label: 'Tx' },
-          { to: '/assistant', icon: Bot, label: 'AI', prominent: true },
-          { to: '/analytics', icon: BarChart3, label: 'Stats' },
-          { to: '/settings', icon: Settings, label: 'You' },
-        ].map((l:any) => {
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-zinc-900/90 backdrop-blur border-t border-zinc-100 dark:border-zinc-800 flex justify-around py-2 pb-safe">
+        {MOBILE_LINKS.map((l:any) => {
           const active = loc.pathname === l.to;
           return (
             <NavLink key={l.to} to={l.to} className={`flex flex-col items-center gap-1 px-3 py-1 rounded-2xl ${l.prominent ? 'bg-[#5f5b77] text-white px-5 -mt-2 py-2 shadow-lg' : active ? 'text-[#5f5b77] dark:text-white' : 'text-zinc-400'}`}>
@@ -58,4 +64,4 @@ export function Sidebar(){
       </nav>
     </>
   );
-}
+});

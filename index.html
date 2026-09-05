@@ -2,12 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Kakeibo — AI Financial Assistant. Track spends, budgets and investments." />
+    <meta name="theme-color" content="#5f5b77" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Kakeibo" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>Kakeibo — AI Financial Assistant</title>
+    <style>
+      /* Instant boot splash: paints before JS loads, React clears it on mount.
+         Same look as the in-app loader, so app-mode launch feels seamless. */
+      html, body { margin: 0; background: #fcf9f8; }
+      #boot { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; font-family: Inter, system-ui, sans-serif; }
+      #boot .brand { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; color: #5f5b77; }
+      #boot .dots { display: flex; gap: 6px; }
+      #boot .dots span { width: 10px; height: 10px; border-radius: 9999px; background: #5f5b77; animation: boot-b 0.8s infinite; }
+      #boot .dots span:nth-child(2) { animation-delay: 0.15s; }
+      #boot .dots span:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes boot-b { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-6px); opacity: 1; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot"><div class="brand">KAKEIBO</div><div class="dots"><span></span><span></span><span></span></div></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

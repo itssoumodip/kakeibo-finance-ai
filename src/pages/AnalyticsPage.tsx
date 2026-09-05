@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUpRight, Utensils } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/layout/Header';
 import { api, getToken } from '@/services/api';
-import { categories, sixMonth } from '@/data/demo';
+import { categories } from '@/data/demo';
 import { pageIn, staggerCards } from '@/utils/gsap';
 
 export default function AnalyticsPage(){
@@ -12,18 +12,20 @@ export default function AnalyticsPage(){
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(!!getToken());
   const rootRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
+  useEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
   useEffect(()=>{
     if(!getToken()){ setLoading(false); return; }
+    let cancelled = false;
     setLoading(true);
-    api.analytics(range).then(d=> setData(d)).catch(()=>{}).finally(()=> setLoading(false));
+    api.analytics(range).then(d=> { if(!cancelled) setData(d); }).catch(()=>{}).finally(()=> { if(!cancelled) setLoading(false); });
+    return ()=>{ cancelled = true; };
   },[range]);
-  useLayoutEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
-  const catData = (data?.categoryBreakdown || []).map((c:any,i:number)=>({ name:c.category, amount:c.amount, color: categories[i%categories.length]?.color || '#9ca3af' }));
-  const merchants = (data?.topMerchants || []).map((m:any,i:number)=>({ n:m.merchant||m._id, c:'', a:`₹${m.amount}`, bg:['#ffe4de','#c8c3e3','#fde68a','#e8e2ff'][i%4], s:(m.merchant||'')[0]||'?' }));
-  const trend = (data?.monthlyTrend || []).map((m:any)=>({ name:m.month.slice(5), v:m.total }));
+  useEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
+  const catData = useMemo(() => (data?.categoryBreakdown || []).map((c:any,i:number)=>({ name:c.category, amount:c.amount, color: categories[i%categories.length]?.color || '#9ca3af' })), [data]);
+  const merchants = useMemo(() => (data?.topMerchants || []).map((m:any,i:number)=>({ n:m.merchant||m._id, c:'', a:`₹${m.amount}`, bg:['#ffe4de','#c8c3e3','#fde68a','#e8e2ff'][i%4], s:(m.merchant||'')[0]||'?' })), [data]);
+  const trend = useMemo(() => (data?.monthlyTrend || []).map((m:any)=>({ name:m.month.slice(5), v:m.total })), [data]);
   const savings = data?.savingsRate ?? 0;
-  if(loading) return <div className="space-y-4"><div className="h-32 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-48 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
+  if(loading && !data) return <div className="space-y-4"><div className="h-32 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-48 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
   return (
     <div ref={rootRef} className="space-y-4 pb-20">
       <Header title="Analytics Overview" subtitle="Here's a breakdown of your finances." />

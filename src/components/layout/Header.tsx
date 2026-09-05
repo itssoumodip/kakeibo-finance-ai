@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Bell, Calendar, X } from 'lucide-react';
 
-export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
+export const Header = memo(function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   const [showNotif, setShowNotif] = useState(false);
   const [showCal, setShowCal] = useState(false);
   const [month, setMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`);
@@ -24,7 +24,7 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
           )}
         </div>
         <div className="relative">
-          <button onClick={()=> setShowNotif(v=>!v)} className="w-9 h-9 rounded-full neumorphic flex items-center justify-center text-zinc-600 hover:text-[#5f5b77] transition relative"><Bell size={16} /><span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" /></button>
+          <button onClick={()=> setShowNotif(v=>!v)} className="w-9 h-9 rounded-full neumorphic flex items-center justify-center text-zinc-600 hover:text-[#5f5b77] transition relative"><Bell size={16} /><span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" /></button>
           {showNotif && (
             <div className="absolute right-0 top-11 z-30 neumorphic rounded-2xl p-4 w-72">
               <div className="flex justify-between items-center mb-3"><span className="text-sm font-semibold">Notifications</span><button onClick={()=> setShowNotif(false)} className="w-6 h-6 rounded-full hover:bg-zinc-100 flex items-center justify-center"><X size={12} /></button></div>
@@ -39,4 +39,4 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
       </div>
     </div>
   );
-}
+});

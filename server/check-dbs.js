@@ -1,7 +1,5 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
-import dns from 'node:dns';
-try { dns.setServers(['8.8.8.8','8.8.4.4','1.1.1.1']); } catch {}
 const uri = process.env.MONGODB_URI;
 console.log('URI DB:', (uri.match(/\/([^/?]+)\?/)||[])[1] || '(none, defaults to test)');
 await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000 });

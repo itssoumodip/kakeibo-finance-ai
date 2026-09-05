@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 type ThemeCtx = { dark: boolean; toggle: () => void; setDark: (v:boolean)=>void };
 
@@ -17,5 +17,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }){
     localStorage.setItem('theme', dark ? 'dark' : 'light');
   },[dark]);
   const toggle = ()=> setDark(v=>!v);
-  return <Ctx.Provider value={{ dark, toggle, setDark }}>{children}</Ctx.Provider>;
+  const value = useMemo(()=>({ dark, toggle, setDark }), [dark]);
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

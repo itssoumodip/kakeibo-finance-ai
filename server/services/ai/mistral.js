@@ -90,11 +90,48 @@ async function executeTool(name, args, userId) {
   }
 }
 
+const isRateLimit = (e) => {
+  const s = `${e?.status || ''} ${e?.code || ''} ${e?.message || ''}`.toLowerCase();
+  return e?.status === 429 || s.includes('429') || s.includes('rate limit') || s.includes('rate_limited');
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// One retry on 429 (often a per-second limit), then local fallback so chat
+// NEVER throws — previously a 429 escaped as unhandledRejection and the
+// request hung until client timeout.
+async function completeWithRetry(mistral, payload) {
+  try {
+    return await mistral.chat.complete(payload);
+  } catch (e) {
+    if (!isRateLimit(e)) throw e;
+    console.warn('[mistral] 429 rate-limited — retrying once after 2s...');
+    await sleep(2000);
+    try {
+      return await mistral.chat.complete(payload);
+    } catch (e2) {
+      if (!isRateLimit(e2)) throw e2;
+      console.warn('[mistral] 429 again — using local fallback');
+      const err = new Error('RATE_LIMIT_FALLBACK');
+      err.fallback = true;
+      throw err;
+    }
+  }
+}
+
 export async function chatWithTools({ userId, messages }) {
   const mistral = getClient();
   if (!mistral) {
     return await fallback(messages, userId);
   }
+  try {
+    return await chatWithToolsInner({ mistral, userId, messages });
+  } catch (e) {
+    if (e?.fallback) return await fallback(messages, userId);
+    throw e;
+  }
+}
+
+async function chatWithToolsInner({ mistral, userId, messages }) {
   const now = new Date();
   const monthNow = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const monthName = now.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
@@ -102,25 +139,35 @@ export async function chatWithTools({ userId, messages }) {
   const day = now.getDate();
   const suffix = day%10===1&&day!==11 ? 'st' : day%10===2&&day!==12 ? 'nd' : day%10===3&&day!==13 ? 'rd' : 'th';
   const longDate = `${day}${suffix} ${now.toLocaleString('en-IN',{month:'long'})} ${now.getFullYear()}`;
-  const system = `You are Kakeibo — your Gen-Z finance buddy who ROASTS wasteful spends! 💰🔥
-Identity: ${dateStr} (${longDate}, current month: ${monthNow} / ${monthName}). You help track spends, investments, budgets — all in real ₹INR.
-Rules:
-- NEVER invent numbers. Always call a tool to get real data before answering about money. If tool returns 0/empty, say "No data for ${monthName}" (or the requested month) — NEVER say October 2024 or any other month unless user asked.
-- Default to ${monthNow} / ${monthName} when user doesn't specify month. Current date is ${dateStr} (${longDate}).
-- When user asks "whats date today", "what is today's date", "current date", answer exactly: "Today is ${longDate}." — no markdown ** around date, plain text only, add one emoji max.
-- Tone: Gen-Z, savage but helpful financial coach. ROAST non-essential spends (burger, pizza, shopping, delivery) — call out waste, compare to home food/savings, give 1-line tip. E.g., "Bruh, ₹200 on a burger? That's 4 home meals 🍔📉 — cook at home and invest that 200, you'll thank yourself." Never just say "Enjoy your meal! 😋".
-- Be concise (2-3 lines max), use INR ₹. Do NOT wrap dates in **.
-- After createTransaction, confirm with category/merchant + 1-line roast/tip if it's Food/Shopping/Entertainment and amount >150.
-- For "what can you do" or greetings, reply exactly: "I’m Kakeibo — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀"
-- For empty data, suggest: "Try checking your bank app or UPI history, or log via tools like 'Took Rapido for ₹120'."`;
+  const system = `You are Kakeibo, the user's Gen-Z finance bestie who texts like a human friend, not a bot. 💰
+
+DATE CONTEXT: Today is ${longDate} (${dateStr}). Current month: ${monthName} (${monthNow}). Default to this month unless the user names another.
+
+HOW YOU TALK:
+- Like a friend texting: short, natural, casual. 1–3 lines max. Never paragraphs, never lectures, never bullet lists.
+- Emojis: 1–3 per reply, placed naturally where a human would put them. No emoji-salad.
+- NEVER dump raw stats like "Income ₹0 · Spent ₹40 · Available ₹-40". Translate numbers into a human sentence. NEVER print a negative amount like ₹-40. Say "₹40 in the red 📉" or "₹40 over".
+- No filler, no signature lines, no repeating your intro, no "just real talk 😎🚀", no lecturing ("check your bank app…"). If data is missing, say it in ONE line and move on.
+
+ROAST RULES (your signature, do it properly):
+- Roast ONLY discretionary spends: food delivery, eating out, shopping, entertainment, cabs when metro exists.
+- NEVER roast essentials (rent, bills, groceries, medicine), income, or savings. Praise those genuinely.
+- A proper roast = specific (merchant + amount) + funny comparison + ONE saving tip. Example: "₹200 on a burger? 🍔 That's 4 home meals, bruh. Cook twice this week and that 200 becomes your SIP 😤"
+- Match intensity to the amount: small spends get a playful tease, big or repeat waste gets a real roast.
+- After createTransaction on Food/Shopping/Entertainment over ₹150, confirm + roast in one breath.
+
+DATA RULES:
+- NEVER invent numbers. Call a tool before answering anything about money. Empty result = "nothing logged" in one short line. Never a wrong month, never a lecture.
+- "what's the date / today" → "Today is ${longDate} 📅". Nothing else.
+- Greetings / "what can you do" → one short intro with a logging example. Never a long canned paragraph.`;
   const model = process.env.MISTRAL_MODEL || process.env.OPENAI_MODEL || 'mistral-small-latest';
 
-  let completion = await mistral.chat.complete({
+  let completion = await completeWithRetry(mistral, {
     model,
     messages: [{ role:'system', content: system }, ...messages],
     tools: financeTools,
     toolChoice: 'auto',
-    temperature: 0.3,
+    temperature: 0.7,
   });
   let msg = completion.choices[0].message;
 
@@ -134,10 +181,10 @@ Rules:
     }
     const toolMessages = toolResults.map(r=>({ role:'tool', toolCallId: r.toolCallId, name: r.name, content: r.content }));
     const nextMessages = [{ role:'system', content: system }, ...messages, { role:'assistant', content: msg.content || '', toolCalls: msg.toolCalls }, ...toolMessages];
-    completion = await mistral.chat.complete({
+    completion = await completeWithRetry(mistral, {
       model,
       messages: nextMessages,
-      temperature: 0.3,
+      temperature: 0.7,
     });
     msg = completion.choices[0].message;
     if (!msg.toolCalls?.length) break;
@@ -145,53 +192,87 @@ Rules:
   return { content: msg.content || 'Done.', toolCalls: msg.toolCalls || msg.tool_calls || [] };
 }
 
+// Local fallback (used when Mistral is down/rate-limited) — same human voice,
+// real data from tools, zero filler.
+function roastTx({ amount: amt, category, sub }) {
+  if (category === 'Food' && amt >= 150) {
+    const meals = Math.max(2, Math.round(amt / 50));
+    if (/burger/i.test(sub)) return ` Bruh, ₹${amt} on a burger? 🍔 That's ~${meals} home meals. Worth it? …okay, maybe once 😭`;
+    if (/pizza/i.test(sub)) return ` Pizza for ₹${amt}? 🍕 Elite taste, broke-wallet energy. Tiffin week, please 😤`;
+    if (/cafe|coffee|chai/i.test(sub)) return ` Cafe runs add up fast ☕. Home brew saves you this exact amount 👀`;
+    return ` ₹${amt} on ${sub}? 😋 Tasty but pricey though. Two home meals cover this.`;
+  }
+  if (category === 'Shopping' && amt >= 500) return ` Shopping spree, huh? ₹${amt} gone 🛍️. Hope it wasn't another "sale" trap 😏`;
+  if (category === 'Entertainment' && amt >= 300) return ` ₹${amt} on fun? 🎬 Allowed. Joy is a budget category too, just not every weekend 😌`;
+  if (category === 'Transport' && amt >= 200 && /cab|uber|ola/i.test(sub)) return ` Cab for ₹${amt}? 🚕 Metro exists, bestie. Just saying 👀`;
+  if (amt >= 1000) return ` ₹${amt} in one shot? 💸 Big moves. Hope it was worth it.`;
+  return '';
+}
+
+function roastTop(t) {
+  if (!t) return '';
+  if (/food/i.test(t.category)) return ` Food leading the leak again 😭. Cook twice this week, watch it drop.`;
+  if (/shopping/i.test(t.category)) return ` Shopping on top? 🛍️ Your cart needs a curfew 😏`;
+  if (/transport/i.test(t.category)) return ` Transport eating cash 🚕. Metro + walk combo saves thousands.`;
+  return '';
+}
+
 async function fallback(messages, userId) {
-  const last = messages[messages.length-1]?.content?.toLowerCase() || '';
+  const lastRaw = messages[messages.length-1]?.content || '';
+  const last = lastRaw.toLowerCase();
   const now = new Date();
   const monthName = now.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-  const monthNow = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const day = now.getDate();
   const suffix = day%10===1&&day!==11 ? 'st' : day%10===2&&day!==12 ? 'nd' : day%10===3&&day!==13 ? 'rd' : 'th';
   const longDate = `${day}${suffix} ${now.toLocaleString('en-IN',{month:'long'})} ${now.getFullYear()}`;
+  const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-  if(/whats date|what is.*date|current date|today.*date/.test(last)){
-    return { content: `Today is ${longDate}.` };
+  if(/whats date|what is.*date|current date|today.*date|day is it/.test(last)){
+    return { content: `Today is ${longDate} 📅` };
   }
-  if(/what can you do|who are you|help|^hi$|^hello$/.test(last)){
-    return { content: `I’m Kakeibo — your Gen-Z finance buddy! 💰✨ I help track spends, investments, budgets, and more — all in real ₹INR. Just say what you spent/invested, and I’ll log it live. No fake numbers, just real talk. 😎 Need a recap? Just ask! 🚀` };
+  if(/what can you do|who are you|help|^hi$|^hello$|^hey$/.test(last)){
+    return { content: `Hey! I'm Kakeibo 💰. I track your spends, budgets and SIPs. Just say what you spent, like "Rapido ₹120", and I'll log it.` };
   }
 
-  const amtMatch = messages[messages.length-1]?.content?.match(/₹?\s?(\d{2,6})/);
+  const amtMatch = lastRaw.match(/₹?\s?(\d{2,6})/);
   const amt = amtMatch ? Number(amtMatch[1]) : null;
-  // handle burger/food explicitly for roast
-  if (amt && /(burger|rapido|uber|pizza|zomato|swiggy|invest|nifty|sip|shopping|bills|food)/i.test(last)) {
-    let type='expense', category='Other', sub=last.slice(0,30);
-    if (/invest|nifty|sip|gold|etf/i.test(last)) { type='investment'; category='Investment'; sub='SIP'; }
-    else if (/rapido|uber|metro|auto/i.test(last)) { category='Transport'; sub= /rapido.*bike/i.test(last)?'Rapido Bike': /auto/i.test(last)?'Auto':'Transport'; }
-    else if (/burger|pizza|zomato|swiggy|food|cafe|lunch/i.test(last)) { category='Food'; sub= /burger/i.test(last) ? 'Burger' : 'Food'; }
-    const result = await executeTool('createTransaction', { amount: amt, type, category, subcategory: sub, merchant: sub }, userId);
-    let roast = '';
-    if (category==='Food' && amt>=150) {
-      if (/burger/i.test(last)) roast = `\nBruh, ₹${amt} on a burger? 🍔 That's ${Math.round(amt/50)} home meals — cook at home and invest the rest 📉.`;
-      else roast = `\n₹${amt} on ${sub}? Could've been home food — save that cash for SIP.`;
-    } else if (category==='Shopping' && amt>=500) roast = `\nShopping spree? ₹${amt} gone — future you is crying.`;
-    return { content: `Logged ₹${amt} · ${category}${sub? ' · '+sub:''}${roast}\n${result.message || ''}`.trim() };
+  if (amt && /(burger|pizza|zomato|swiggy|rapido|uber|ola|metro|auto|cab|invest|nifty|sip|gold|etf|shopping|movie|food|coffee|chai|rent|bill)/i.test(last)) {
+    let type='expense', category='Other', sub='Spend';
+    if (/invest|nifty|sip|gold|etf|mf|mutual/i.test(last)) { type='investment'; category='Investment'; sub = /nifty/i.test(last) ? 'Nifty 50 SIP' : /gold/i.test(last) ? 'Gold ETF' : 'SIP'; }
+    else if (/rapido|uber|ola|metro|auto|cab|taxi/i.test(last)) { category='Transport'; sub = /rapido/i.test(last) ? 'Rapido' : /metro/i.test(last) ? 'Metro' : /auto/i.test(last) ? 'Auto' : 'Cab'; }
+    else if (/burger|pizza|zomato|swiggy|food|cafe|coffee|chai|lunch|dinner|biryani/i.test(last)) { category='Food'; sub = /burger/i.test(last) ? 'Burger' : /pizza/i.test(last) ? 'Pizza' : /coffee|chai|cafe/i.test(last) ? 'Cafe' : 'Food'; }
+    else if (/movie|netflix|game|concert|party/i.test(last)) { category='Entertainment'; sub='Fun'; }
+    else if (/shirt|shoes|amazon|flipkart|myntra|shopping|clothes/i.test(last)) { category='Shopping'; sub='Shopping'; }
+    else if (/rent|bill|electricity|recharge|emi/i.test(last)) { category='Bills'; sub='Bills'; }
+    await executeTool('createTransaction', { amount: amt, type, category, subcategory: sub, merchant: sub }, userId);
+    if (type === 'investment') return { content: `Logged ${inr(amt)} → ${sub} ⚡ Future you says thanks. Keep the streak going.` };
+    if (category === 'Bills') return { content: `Logged ${inr(amt)} for ${sub} ✅ Adulting done right.` };
+    return { content: `Logged ${inr(amt)} · ${sub} ✅${roastTx({ amount: amt, category, sub })}` };
   }
-  if (/where.*money|spending too much|overspend|where did my money go/.test(last)) {
+  if (/where.*money|spending too much|overspend|where did my money go|spent.*most|biggest/.test(last)) {
     const r = await executeTool('getCategorySpending', {}, userId);
-    if(!r.categories?.length) return { content: `Oops! No data for ${monthName} (${monthNow}). Did you track your spends this month? 😅 Try checking your bank app or UPI history. Or if you used my tools before, lemme know—I’ll dig deeper! 💸✨` };
-    const top = r.categories.slice(0,3).map(c=> `${c.category} — ₹${c.amount}`).join('\n');
-    return { content: `👀 Your biggest spending categories for ${monthName}:\n${top}` };
+    if(!r.categories?.length) return { content: `Nothing logged for ${monthName} yet 👀. Tell me a spend and I'll start tracking.` };
+    const top = r.categories.slice(0,3).map(c=> `${c.category} ${inr(c.amount)}`).join(', ');
+    return { content: `${top} 📊${roastTop(r.categories[0])}` };
   }
-  if (/no spends|where.*money|october/.test(last)) {
-    return { content: `Oops! No spends recorded for ${monthName} (${monthNow}) 😬 Did you pay via cash, another bank, or forgot to log? I’m Kakeibo — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
-  }
-  if (/invest/i.test(last)) {
+  if (/invest|sip|portfolio/.test(last)) {
     const r = await executeTool('getInvestmentSummary', {}, userId);
-    if(!r.total) return { content: `No investments for ${monthName} yet. Try “Invested ₹500 in Nifty 50 SIP” and I’ll log it live. I’m Kakeibo 💰✨` };
-    return { content: `💰 You invested ₹${r.total} this month across ${r.count} transactions for ${monthName}.` };
+    if(!r.total) return { content: `No investments logged for ${monthName} yet 👀. Say "Invested ₹500 in Nifty 50 SIP" and I'll track it.` };
+    return { content: `${inr(r.total)} invested across ${r.count} SIPs this month ⚡. Compounding is quietly working for you.` };
+  }
+  if (/budget/.test(last)) {
+    const r = await executeTool('getBudgetStatus', {}, userId);
+    if(!r.budgets?.length) return { content: `No budgets set for ${monthName} 👀. Set one on the Budgets page and I'll guard it like a bouncer 🛡️` };
+    const worst = [...r.budgets].sort((a,b)=> (b.spent/b.limit) - (a.spent/a.limit))[0];
+    const lines = r.budgets.slice(0,3).map(b=> `${b.category} ${inr(b.spent)}/${inr(b.limit)}`).join(', ');
+    const warn = worst && worst.spent / worst.limit > 0.85 ? ` ⚠️ ${worst.category} is almost maxed. Chill on it for a few days.` : '';
+    return { content: `${lines}.${warn}` };
   }
   const s = await executeTool('getMonthlySummary', {}, userId);
-  if(!s.income && !s.expenses) return { content: `Oops! No data for ${monthName} (${monthNow}). Did you track your spends this month? 😅 I’m Kakeibo — your Gen-Z finance buddy! 💰✨ Just say what you spent/invested, and I’ll log it live in real ₹INR. 🚀` };
-  return { content: `Income ₹${s.income} · Spent ₹${s.expenses} · Invested ₹${s.investments} · Available ₹${s.available} for ${monthName}. Ask me to add a transaction like "Took Rapido for ₹120".` };
+  if(!s.income && !s.expenses) return { content: `Nothing logged for ${monthName} yet 👀. Drop a spend like "Rapido ₹120" and I'll start tracking.` };
+  if(!s.income && s.expenses) return { content: `${inr(s.expenses)} out in ${monthName}, no income logged yet 📉. Add your income and I'll show the full picture.` };
+  const avail = (s.income || 0) - (s.expenses || 0) - (s.investments || 0);
+  const availTxt = avail < 0 ? `${inr(Math.abs(avail))} in the red 📉` : `${inr(avail)} still safe ✅`;
+  const invTxt = s.investments ? ` · ${inr(s.investments)} invested ⚡` : '';
+  return { content: `${monthName}: ${inr(s.income)} in, ${inr(s.expenses)} out${invTxt}. ${availTxt}.` };
 }

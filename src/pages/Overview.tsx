@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus, Car, PiggyBank, TrendingUp, Utensils, ShoppingBag } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card } from '@/components/ui/Card';
@@ -20,7 +20,7 @@ export default function Overview(){
   const [loading, setLoading] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
+  useEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
 
   useEffect(()=>{
     if(!getToken()){ setLoading(false); return; }
@@ -37,11 +37,32 @@ export default function Overview(){
     return ()=>{ cancelled=true; };
   },[filter]);
 
-  useLayoutEffect(()=>{
+  useEffect(()=>{
     if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card');
   },[loading, live, recent]);
 
-  if (loading) {
+  // Memoize expensive derivations — must stay before early return
+  const isLive = !!live;
+  const sum = useMemo(() => isLive ? {
+    income: live.income || 0,
+    expenses: live.expenses || 0,
+    investments: live.investments || 0,
+    available: (live.income - live.expenses - (live.investments||0)) || 0,
+    savingsRate: live.savingsRate || 0
+  } : { income: 0, expenses: 0, investments: 0, available: 0, savingsRate: 0 }, [live, isLive]);
+
+  const cats = useMemo(() => (live?.categoryBreakdown || []).slice(0,3).map((c:any)=>({ name:c.category, amount:c.amount })), [live]);
+  const txs = useMemo(() => (recent || []).map((t:any)=>({
+    id:t._id, name:t.merchant||t.subcategory||t.category, cat:t.category,
+    amount: t.type==='income'? t.amount : -t.amount,
+    date: new Date(t.date).toLocaleDateString(),
+    icon: t.category==='Food'?Utensils:t.category==='Transport'?Car:ShoppingBag,
+    bg:t.type==='income'?'#d1f0e3':'#f3f0ff', plus:t.type==='income'
+  })), [recent]);
+  const chartData = useMemo(() => (live?.spendingOverTime?.length ? live.spendingOverTime.slice(-7) : live?.monthlyTrend?.slice(-7) || []).map((p:any)=>({ name:(p.date||p.month||'').slice(5), v:p.amount||p.total||0 })), [live]);
+
+  // Stale-while-revalidate: skeleton only on first load, keep old data visible on refetch
+  if (loading && !live && !recent) {
     return (
       <div ref={rootRef} className="space-y-5 pb-20">
         <Skeleton className="h-6 w-40" />
@@ -54,26 +75,6 @@ export default function Overview(){
       </div>
     );
   }
-
-  // production: use live only, no demo fallback when authenticated
-  const isLive = !!live;
-  const sum = isLive ? {
-    income: live.income || 0,
-    expenses: live.expenses || 0,
-    investments: live.investments || 0,
-    available: (live.income - live.expenses - (live.investments||0)) || 0,
-    savingsRate: live.savingsRate || 0
-  } : { income: 0, expenses: 0, investments: 0, available: 0, savingsRate: 0 };
-
-  const cats = (live?.categoryBreakdown || []).slice(0,3).map((c:any)=>({ name:c.category, amount:c.amount }));
-  const txs = (recent || []).map((t:any)=>({
-    id:t._id, name:t.merchant||t.subcategory||t.category, cat:t.category,
-    amount: t.type==='income'? t.amount : -t.amount,
-    date: new Date(t.date).toLocaleDateString(),
-    icon: t.category==='Food'?Utensils:t.category==='Transport'?Car:ShoppingBag,
-    bg:t.type==='income'?'#d1f0e3':'#f3f0ff', plus:t.type==='income'
-  }));
-  const chartData = (live?.spendingOverTime?.length ? live.spendingOverTime.slice(-7) : live?.monthlyTrend?.slice(-7) || []).map((p:any)=>({ name:(p.date||p.month||'').slice(5), v:p.amount||p.total||0 }));
 
   return (
     <div ref={rootRef} className="space-y-5 pb-20">

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TrendingUp, Utensils } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { api, getToken } from '@/services/api';
@@ -10,14 +10,16 @@ export default function ReportsPage(){
   const [month, setMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`);
   const [toast, setToast] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
+  useEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
   useEffect(()=>{
     if(!getToken()){ setLoading(false); return; }
+    let cancelled = false;
     setLoading(true);
-    api.report(month).then(setData).catch(()=>{}).finally(()=> setLoading(false));
+    api.report(month).then(d => { if(!cancelled) setData(d); }).catch(()=>{}).finally(()=> { if(!cancelled) setLoading(false); });
+    return ()=>{ cancelled = true; };
   },[month]);
-  useLayoutEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
-  const summary = data?.summary || { income:0, expenses:0, investments:0, available:0, savingsRate:0 };
+  useEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
+  const summary = useMemo(() => data?.summary || { income:0, expenses:0, investments:0, available:0, savingsRate:0 }, [data]);
   const exportFile = async(type:'csv'|'excel')=>{
     if(!getToken()){ setToast('Login to export'); setTimeout(()=>setToast(''),2000); return; }
     try{
@@ -28,7 +30,7 @@ export default function ReportsPage(){
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = type==='csv' ? 'transactions.csv' : 'transactions.xlsx'; a.click();
     } catch(e:any){ setToast(e.message); setTimeout(()=>setToast(''),2000); }
   };
-  if(loading) return <div className="space-y-4"><div className="h-32 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-48 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
+  if(loading && !data) return <div className="space-y-4"><div className="h-32 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-48 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
   return (
     <div ref={rootRef} className="space-y-5 pb-20">
       {toast && <div className="fixed top-4 right-4 z-50 bg-zinc-900 text-white text-sm px-4 py-2 rounded-full">{toast}</div>}

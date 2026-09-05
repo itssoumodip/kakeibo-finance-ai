@@ -1,23 +1,61 @@
-import { useState, useLayoutEffect, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Bot, Car, Pencil, Undo2, Mic, MicOff, Paperclip, Send, Trash2, X, FileText, Image as ImageIcon } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { api, getToken } from '@/services/api';
-import gsap from 'gsap';
 
 type Msg = { role: 'user' | 'ai', text: string, card?: { name: string, cat: string, amount: number }, _id?: string, fileName?: string };
 
-function TypingDots(){
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(()=>{
-    if(!ref.current) return;
-    const dots = ref.current.querySelectorAll('.dot');
-    gsap.fromTo(dots, { y: 0 }, { y: -6, duration: 0.35, stagger: 0.12, repeat: -1, yoyo: true, ease: 'power2.inOut' });
-  },[]);
+function ChatSkeleton(){
+  // Animated placeholder that mirrors the real chat layout — avatar + bubbles
+  // shimmer in with pure CSS (zero JS cost), instead of a dead "Loading..." text.
   return (
-    <div ref={ref} className="flex items-center gap-1 py-1">
-      <span className="dot w-2 h-2 rounded-full bg-[#5f5b77] opacity-70" />
-      <span className="dot w-2 h-2 rounded-full bg-[#5f5b77] opacity-70" />
-      <span className="dot w-2 h-2 rounded-full bg-[#5f5b77] opacity-70" />
+    <div className="flex flex-col h-[calc(100vh-40px)] pb-20 lg:pb-0" aria-label="Loading chat">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="h-8 w-52 animate-pulse bg-zinc-200/70 dark:bg-zinc-800 rounded-xl" />
+          <div className="h-4 w-60 animate-pulse bg-zinc-200/70 dark:bg-zinc-800 rounded-xl mt-2" />
+        </div>
+        <div className="h-7 w-24 animate-pulse bg-zinc-200/70 dark:bg-zinc-800 rounded-full mt-6" />
+      </div>
+      <div className="flex-1 space-y-4 px-1 py-4">
+        <div className="flex justify-start">
+          <div className="w-7 h-7 rounded-full bg-[#e8e2ff] animate-pulse mr-2 shrink-0 mt-1" />
+          <div className="rounded-2xl rounded-bl-sm bg-[#e8e2ff]/50 px-4 py-3 space-y-2">
+            <div className="h-3 w-64 max-w-[60vw] animate-pulse bg-white/80 rounded-full" />
+            <div className="h-3 w-40 animate-pulse bg-white/80 rounded-full" />
+            <div className="h-3 w-52 max-w-[55vw] animate-pulse bg-white/80 rounded-full" />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <div className="rounded-2xl rounded-br-sm neumorphic px-4 py-3">
+            <div className="h-3 w-44 max-w-[50vw] animate-pulse bg-zinc-200/80 dark:bg-zinc-700 rounded-full" />
+          </div>
+        </div>
+        <div className="flex justify-start">
+          <div className="w-7 h-7 rounded-full bg-[#e8e2ff] animate-pulse mr-2 shrink-0 mt-1" />
+          <div className="rounded-2xl rounded-bl-sm bg-[#e8e2ff]/50 px-4 py-3 space-y-2">
+            <div className="h-3 w-56 max-w-[58vw] animate-pulse bg-white/80 rounded-full" />
+            <div className="h-3 w-32 animate-pulse bg-white/80 rounded-full" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        <div className="flex gap-2">
+          {[0,1,2].map(i => <div key={i} className="h-8 w-28 animate-pulse neumorphic rounded-full" style={{ animationDelay: `${i * 0.12}s` }} />)}
+        </div>
+        <div className="h-[52px] animate-pulse neumorphic rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+function TypingDots(){
+  // Pure CSS bounce — zero JS animation cost vs gsap repeat ticker
+  return (
+    <div className="flex items-center gap-1 py-1">
+      {[0,1,2].map(i => (
+        <span key={i} className="w-2 h-2 rounded-full bg-[#5f5b77] opacity-70 animate-bounce" style={{ animationDelay: `${i*0.15}s`, animationDuration: '0.8s' }} />
+      ))}
     </div>
   );
 }
@@ -93,22 +131,11 @@ export default function AssistantPage(){
     })();
   },[]);
 
-  useLayoutEffect(()=>{ if(listRef.current) gsap.fromTo(listRef.current, { autoAlpha:0 }, { autoAlpha:1, duration:0.2 }); },[]);
-  // sequential chat animation: user msg -> typing dots -> ai msg
+  // Auto-scroll only — no per-message gsap (was causing jank on every send)
   useEffect(()=>{
     if(!listRef.current) return;
-    const items = listRef.current.querySelectorAll('.gsap-msg');
-    if(!items.length) return;
-    const last = items[items.length-1] as HTMLElement;
-    gsap.fromTo(last, { y: 10, autoAlpha: 0, scale: 0.98 }, { y: 0, autoAlpha: 1, scale: 1, duration: 0.28, ease: 'power3.out', overwrite: true });
-    listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
-  },[messages]);
-  useEffect(()=>{
-    if(sending && listRef.current){
-      const dots = listRef.current.querySelector('.typing-dots');
-      if(dots) gsap.fromTo(dots, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.2, ease: 'power2.out' });
-    }
-  },[sending]);
+    listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: 'auto' });
+  },[messages, sending]);
 
   const send = async(t: string) => {
     const filePart = attachedFile ? `\n[Attached: ${attachedFile.name} (${(attachedFile.size/1024).toFixed(1)}KB, ${attachedFile.type||'unknown'})]` : '';
@@ -132,6 +159,7 @@ export default function AssistantPage(){
       } else throw new Error('no token');
     }catch(e:any){
       if(e.name==='AbortError') setMessages(m => [...m, { role: 'ai', text: 'Request timed out — please try again.' }]);
+      else if(/429|rate.?limit/i.test(e?.message || '')) setMessages(m => [...m, { role: 'ai', text: 'Kakeibo AI is rate-limited right now ⏳ — wait a minute and try again. Meanwhile I can still log spends locally: try "Took Rapido for ₹120".' }]);
       else {
         let ai = 'I’m here to help you understand your money. Try asking about spending, budgets or investments.';
         let card: any = undefined;
@@ -150,11 +178,12 @@ export default function AssistantPage(){
   };
 
   const clearChat = async()=>{
-    if(!sessionId) setMessages([{ role:'ai', text:'Ask me anything about your money.' }]);
-    else { setMessages([{ role:'ai', text:'New chat started.' }]); setSessionId(null); }
+    // Fresh empty chat — no "New chat started." bubble, it's just noise.
+    setMessages([]);
+    setSessionId(null);
   };
 
-  if(loading) return <div className="p-8 text-center text-sm text-zinc-500">Loading chat...</div>;
+  if(loading && messages.length===0) return <ChatSkeleton />;
 
   return (
     <div className="flex flex-col h-[calc(100vh-40px)] pb-20 lg:pb-0">

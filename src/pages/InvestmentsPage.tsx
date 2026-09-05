@@ -1,9 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, PiggyBank } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { api, getToken } from '@/services/api';
-import { investments } from '@/data/demo';
 import { pageIn, staggerCards } from '@/utils/gsap';
 
 export default function InvestmentsPage(){
@@ -22,13 +21,13 @@ export default function InvestmentsPage(){
       if(ana) setIncome(ana.income || 0);
     } catch{} finally{ setLoading(false); }
   };
-  useLayoutEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
+  useEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
   useEffect(()=>{ fetchData(); },[]);
-  useLayoutEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
-  const chartData = data?.total ? [{ v: Math.max(0, data.total*0.4) }, { v: Math.max(0, data.total*0.6) }, { v: Math.max(0, data.total*0.72) }, { v: Math.max(0, data.total*0.85) }, { v: data.total }] : [{ v: 0 }, { v: 0 }];
-  const breakdown = data?.breakdown?.length ? data.breakdown : [];
-  const history = data?.investments?.length ? data.investments.slice(0,3).map((t:any)=>({ t: `${t.subcategory || t.merchant}`, d: new Date(t.date).toLocaleDateString(), a: `-₹${t.amount}` })) : [];
-  if(loading) return <div className="space-y-4"><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
+  useEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
+  const chartData = useMemo(() => data?.total ? [{ v: Math.max(0, data.total*0.4) }, { v: Math.max(0, data.total*0.6) }, { v: Math.max(0, data.total*0.72) }, { v: Math.max(0, data.total*0.85) }, { v: data.total }] : [{ v: 0 }, { v: 0 }], [data?.total]);
+  const breakdown = useMemo(() => data?.breakdown?.length ? data.breakdown : [], [data]);
+  const history = useMemo(() => data?.investments?.length ? data.investments.slice(0,3).map((t:any)=>({ t: `${t.subcategory || t.merchant}`, d: new Date(t.date).toLocaleDateString(), a: `-₹${t.amount}` })) : [], [data]);
+  if(loading && !data) return <div className="space-y-4"><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /></div>;
   return (
     <div ref={rootRef} className="space-y-5 pb-20">
       {toast && <div className="fixed top-4 right-4 z-50 bg-zinc-900 text-white text-sm px-4 py-2 rounded-full">{toast}</div>}

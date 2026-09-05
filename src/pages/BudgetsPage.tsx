@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Plus, Utensils, X, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/layout/Header';
@@ -22,10 +22,15 @@ export default function BudgetsPage(){
   };
   useEffect(()=>{ fetchBudgets(); },[]);
 
-  const total = data?.total.limit || 0;
-  const spent = data?.total.spent || 0;
-  const pct = data?.total.pct ?? (total ? Math.round((spent/total)*100) : 0);
-  const rows = data?.budgets || [] as BudgetRow[];
+  const { total, spent, pct, rows } = useMemo(() => {
+    const t = data?.total.limit || 0;
+    const s = data?.total.spent || 0;
+    return {
+      total: t, spent: s,
+      pct: data?.total.pct ?? (t ? Math.round((s/t)*100) : 0),
+      rows: (data?.budgets || []) as BudgetRow[],
+    };
+  }, [data]);
 
   const handleUpsert = async(e:React.FormEvent)=>{
     e.preventDefault();
@@ -44,10 +49,10 @@ export default function BudgetsPage(){
   };
 
   const rootRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
-  useLayoutEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
+  useEffect(()=>{ if(rootRef.current) pageIn(rootRef.current); },[]);
+  useEffect(()=>{ if(!loading && rootRef.current) staggerCards(rootRef.current, '.gsap-card'); },[loading, data]);
 
-  if(loading) return <div className="space-y-3 p-4"><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="grid md:grid-cols-3 gap-4">{[1,2,3].map(i=><div key={i} className="h-28 animate-pulse bg-zinc-100 rounded-[24px]" />)}</div></div>;
+  if(loading && !data) return <div className="space-y-3 p-4"><div className="h-40 animate-pulse bg-zinc-100 rounded-[24px]" /><div className="grid md:grid-cols-3 gap-4">{[1,2,3].map(i=><div key={i} className="h-28 animate-pulse bg-zinc-100 rounded-[24px]" />)}</div></div>;
 
   return (
     <div ref={rootRef} className="space-y-5 pb-20">

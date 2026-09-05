@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Lock, Eye, EyeOff } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronRight, Lock, Eye, EyeOff, Download } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -62,6 +63,14 @@ export default function SettingsPage(){
         </div>
         <div className="flex justify-between items-center pt-4"><div><div className="text-sm font-medium">Language</div><div className="text-xs text-zinc-500">Current: English</div></div><button className="px-3 py-1.5 rounded-full neumorphic text-sm">English <ChevronRight size={12} className="inline rotate-90" /></button></div>
       </Card>
+
+      <Link to="/install" className="block">
+        <Card className="p-6 flex items-center gap-4" hover>
+          <span className="w-11 h-11 rounded-2xl bg-[#e8e2ff] flex items-center justify-center shrink-0 text-[#5f5b77]"><Download size={18} /></span>
+          <span className="flex-1"><span className="block text-sm font-semibold">Get the Kakeibo app</span><span className="block text-xs text-zinc-500">Install on your phone — instant opens, works offline</span></span>
+          <ChevronRight size={16} className="text-zinc-400" />
+        </Card>
+      </Link>
     </div>
   );
 }
