@@ -14,8 +14,17 @@ import recurringRoutes from './routes/recurring.js';
 import chatRoutes from './routes/chat.js';
 import { notFound, errorHandler } from './middleware/error.js';
 
-// prevent ECONNRESET crash — log and keep running
-process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason?.message || reason));
+// prevent ECONNRESET crash — log and keep running.
+// Transient Atlas pool clears during network flaps are auto-recovered by the
+// driver (you'll see [mongo] reconnected right after), so log them calmly.
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.message || String(reason);
+  if (/pool.*was cleared|connection.*closed|timed out|ECONNRESET/i.test(msg)) {
+    console.warn('[mongo] transient drop, auto-recovering:', msg.slice(0, 160));
+    return;
+  }
+  console.error('[unhandledRejection]', msg);
+});
 process.on('uncaughtException', (err) => console.error('[uncaughtException]', err.message));
 
 const app = express();
@@ -72,7 +81,7 @@ connectDB().then(()=> {
 }).catch(e=>{
   console.error('❌ DB connect failed after retries:', e.message);
   console.error('   → API is up but DB routes will fail until Mongo connects.');
-  console.error('   → Most likely: Atlas Network Access IP whitelist. Add your IP or 0.0.0.0/0.');
+  console.error('   → Check Wi-Fi/VPN/router/ISP stability; check Atlas Network Access only if direct TLS tests consistently fail.');
 });
 
 // graceful shutdown

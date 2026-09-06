@@ -8,7 +8,7 @@ export function clearToken(){ localStorage.removeItem('token'); }
 const cache = new Map<string, { ts: number; data: any }>();
 const inflight = new Map<string, Promise<any>>();
 const CACHE_TTL = 20_000; // 20s for analytics/transactions lists
-const REQUEST_TIMEOUT = 12_000;
+const DEFAULT_TIMEOUT = 12_000;
 
 function cacheKey(path: string, opts: RequestInit) {
   return `${opts.method || 'GET'}:${path}:${getToken()?.slice(-8) || 'noauth'}`;
@@ -34,7 +34,8 @@ function emitLoading() {
 function trackStart() { activeRequests += 1; emitLoading(); }
 function trackEnd() { activeRequests = Math.max(0, activeRequests - 1); emitLoading(); }
 
-async function request(path:string, opts: RequestInit & { auth?: boolean; ttl?: number } = {}){
+async function request(path:string, opts: RequestInit & { auth?: boolean; ttl?: number; timeoutMs?: number } = {}){
+  const REQUEST_TIMEOUT = opts.timeoutMs ?? DEFAULT_TIMEOUT;
   const method = (opts.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const ttl = opts.ttl ?? CACHE_TTL;
@@ -100,7 +101,9 @@ export const api = {
   report: (month?:string) => request(`/api/reports${month?`?month=${month}`:''}`, { ttl: 20_000 }),
   investments: (month?:string) => request(`/api/investments${month?`?month=${month}`:''}`, { ttl: 20_000 }),
   recurring: () => request('/api/recurring', { ttl: 30_000 }),
-  chat: (content:string, sessionId?:string) => request('/api/chat', { method:'POST', body: JSON.stringify({ content, sessionId }) }),
+  // Chat gets a bigger budget (LLM + tools can take a while) — server auto-falls
+  // back well before this; the clientId makes silent auto-retries idempotent.
+  chat: (content:string, sessionId?:string, clientId?:string) => request('/api/chat', { method:'POST', body: JSON.stringify({ content, sessionId, clientId }), timeoutMs: 30_000 }),
   exportCsv: () => `${BASE}/api/reports/export/csv`,
   exportExcel: () => `${BASE}/api/reports/export/excel`,
 };

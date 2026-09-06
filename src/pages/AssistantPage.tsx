@@ -151,15 +151,28 @@ export default function AssistantPage(){
       setSending(false);
       return;
     }
+    // One idempotent attempt + one silent auto-retry on timeout/abort.
+    // Same clientId both times: if the server actually finished the first try,
+    // the retry returns the saved reply instead of double-logging anything.
+    const attempt = (clientId: string) => api.chat(fullText, sessionId || undefined, clientId);
+    const clientId = (crypto as any)?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    const isTimeout = (e:any) => e?.name === 'AbortError' || /timed out|timeout|abort|network|failed to fetch/i.test(e?.message || '');
     try{
       if(getToken()){
-        const r:any = await api.chat(fullText, sessionId || undefined);
+        let r:any;
+        try {
+          r = await attempt(clientId);
+        } catch (e:any) {
+          if (!isTimeout(e)) throw e;
+          await new Promise(res => setTimeout(res, 1500));
+          r = await attempt(clientId);
+        }
         if(r.sessionId && !sessionId) setSessionId(r.sessionId);
         const text = r.assistant?.content || r.ai?.content || 'Done — check your transactions.';
         setMessages(m => [...m, { role: 'ai', text }]);
       } else throw new Error('no token');
     }catch(e:any){
-      if(e.name==='AbortError') setMessages(m => [...m, { role: 'ai', text: 'Request timed out — please try again.' }]);
+      if(isTimeout(e)) setMessages(m => [...m, { role: 'ai', text: 'Still taking too long — the server might be busy. Please try again in a bit.' }]);
       else if(/429|rate.?limit/i.test(e?.message || '')) setMessages(m => [...m, { role: 'ai', text: 'Kakeibo AI is rate-limited right now ⏳ — wait a minute and try again. Meanwhile I can still log spends locally: try "Took Rapido for ₹120".' }]);
       else {
         let ai = 'I’m here to help you understand your money. Try asking about spending, budgets or investments.';

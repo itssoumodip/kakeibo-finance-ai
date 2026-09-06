@@ -10,7 +10,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function hintFor(err) {
   const msg = (err?.message || '').toLowerCase();
   if (msg.includes('closed') || msg.includes('econnreset') || msg.includes('timed out') || msg.includes('serverselection'))
-    return '→ TCP connects but handshake drops: almost always Atlas Network Access (IP Access List) blocking your IP. In Atlas: Network Access → Add IP Address → "Allow Access from Anywhere" (0.0.0.0/0) for testing, or add your current public IP.';
+    return '→ TLS/network connection to Atlas timed out. Check Wi-Fi, VPN, router, or ISP stability. Check Atlas Network Access only if direct TLS tests from this machine consistently fail.';
   if (msg.includes('bad auth') || msg.includes('authentication failed'))
     return '→ Wrong DB username/password or user lacks readWrite on the database. Check Atlas: Database Access → user exists, correct password, right role.';
   if (msg.includes('enotfound') || msg.includes('querySrv'))
@@ -33,11 +33,11 @@ export const connectDB = async () => {
   for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
     try {
       await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 30000,
         socketTimeoutMS: 45000,
         heartbeatFrequencyMS: 10000,
         maxPoolSize: 10,
-        minPoolSize: 2,
+        minPoolSize: 0,
         retryWrites: true,
         w: 'majority',
       });

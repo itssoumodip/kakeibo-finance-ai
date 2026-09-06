@@ -11,9 +11,26 @@ export const getSessionMessages = async (req,res)=>{
   res.json(msgs);
 };
 export const sendMessage = async (req,res)=>{
+  const t0 = Date.now();
   try {
-    const { content, sessionId } = req.body;
+    const { content, sessionId, clientId } = req.body;
     if (!content) return res.status(400).json({ message:'content required' });
+    // Idempotent retry: if this clientId was already processed (client timed out
+    // but the server finished), return the saved reply instead of re-running
+    // the LLM + tools (which would double-log transactions).
+    if (clientId) {
+      const priorUser = await ChatMessage.findOne({ user:req.user._id, 'meta.clientId': clientId }).lean();
+      if (priorUser) {
+        const priorAi = await ChatMessage.findOne({
+          user:req.user._id, session: priorUser.session, role:'assistant',
+          createdAt: { $gte: priorUser.createdAt },
+        }).sort({ createdAt: 1 }).lean();
+        if (priorAi) {
+          console.log(`[chat] deduped retry ${Date.now()-t0}ms`);
+          return res.json({ sessionId: priorUser.session, userMessage: content, assistant: priorAi, ai: priorAi, deduped: true });
+        }
+      }
+    }
     let session;
     if (sessionId) {
       session = await ChatSession.findOne({ _id: sessionId, user:req.user._id });
@@ -21,7 +38,7 @@ export const sendMessage = async (req,res)=>{
     } else {
       session = await ChatSession.create({ user:req.user._id, title: content.slice(0,40) });
     }
-    await ChatMessage.create({ session: session._id, user:req.user._id, role:'user', content });
+    await ChatMessage.create({ session: session._id, user:req.user._id, role:'user', content, meta:{ ...(clientId ? { clientId } : {}) } });
     // build history for LLM: last 10 msgs
     const history = await ChatMessage.find({ session: session._id }).sort({ createdAt:-1 }).limit(10).lean();
     const messages = [...history].reverse().map(m=>({ role:m.role==='assistant'?'assistant':'user', content:m.content }));
@@ -31,6 +48,7 @@ export const sendMessage = async (req,res)=>{
     const ai = await chatWithTools({ userId: req.user._id, messages });
     const assistantMsg = await ChatMessage.create({ session: session._id, user:req.user._id, role:'assistant', content: ai.content, meta:{ toolCalls: ai.toolCalls } });
     session.updatedAt = new Date(); await session.save();
+    console.log(`[chat] replied in ${Date.now()-t0}ms`);
     res.json({ sessionId: session._id, userMessage: content, assistant: assistantMsg, ai });
   } catch (e) {
     const s = `${e?.status || ''} ${e?.code || ''} ${e?.message || ''}`.toLowerCase();

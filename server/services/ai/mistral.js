@@ -1,16 +1,8 @@
-import { Mistral } from '@mistralai/mistralai';
 import Transaction from '../../models/Transaction.js';
 import Budget from '../../models/Budget.js';
 import { financeTools } from './tools.js';
+import { getProvider, llmChat } from './llm.js';
 import { getMonthlySummary } from '../../controllers/analyticsController.js';
-
-let client = null;
-function getClient() {
-  const key = process.env.MISTRAL_API_KEY || process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  if (!client) client = new Mistral({ apiKey: key });
-  return client;
-}
 
 async function executeTool(name, args, userId) {
   const monthNow = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
@@ -99,42 +91,69 @@ const isRateLimit = (e) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// One retry on 429 (often a per-second limit), then local fallback so chat
+// One retry on fast-429 (often a per-second limit), then local fallback so chat
 // NEVER throws — previously a 429 escaped as unhandledRejection and the
 // request hung until client timeout.
-async function completeWithRetry(mistral, payload) {
+// Each attempt is raced against ATTEMPT_TIMEOUT: a hanging model call goes
+// straight to fallback (no sleep+retry — waiting longer never helps a hang).
+const ATTEMPT_TIMEOUT_MS = 8000;
+const withTimeout = (p, ms) => Promise.race([
+  p,
+  sleep(ms).then(() => { const e = new Error('MODEL_TIMEOUT'); e.timeout = true; throw e; }),
+]);
+const toFallback = () => { const e = new Error('USE_FALLBACK'); e.fallback = true; throw e; };
+
+async function completeWithRetry(llmArgs) {
   try {
-    return await mistral.chat.complete(payload);
+    return await withTimeout(llmChat(llmArgs), ATTEMPT_TIMEOUT_MS);
   } catch (e) {
+    if (e?.timeout) { console.warn('[llm] model call hung >8s — using local fallback'); toFallback(); }
     if (!isRateLimit(e)) throw e;
-    console.warn('[mistral] 429 rate-limited — retrying once after 2s...');
+    console.warn('[llm] 429 rate-limited — retrying once after 2s...');
     await sleep(2000);
     try {
-      return await mistral.chat.complete(payload);
+      return await withTimeout(llmChat(llmArgs), ATTEMPT_TIMEOUT_MS);
     } catch (e2) {
+      if (e2?.timeout) { console.warn('[llm] retry hung — using local fallback'); toFallback(); }
       if (!isRateLimit(e2)) throw e2;
-      console.warn('[mistral] 429 again — using local fallback');
-      const err = new Error('RATE_LIMIT_FALLBACK');
-      err.fallback = true;
-      throw err;
+      console.warn('[llm] 429 again — using local fallback');
+      toFallback();
     }
   }
 }
 
+let loggedProvider = false;
 export async function chatWithTools({ userId, messages }) {
-  const mistral = getClient();
-  if (!mistral) {
+  const { provider, model, apiKey } = getProvider();
+  if (!loggedProvider) {
+    console.log(`[llm] provider=${provider} model=${model} ${apiKey ? '(key set)' : '(NO KEY — local fallback only)'}`);
+    loggedProvider = true;
+  }
+  if (!apiKey) {
     return await fallback(messages, userId);
   }
   try {
-    return await chatWithToolsInner({ mistral, userId, messages });
+    return await chatWithToolsInner({ userId, messages });
   } catch (e) {
-    if (e?.fallback) return await fallback(messages, userId);
+    if (e?.fallback || e?.timeout || e?.noKey) return await fallback(messages, userId);
+    if (e?.status === 401 || e?.status === 403) {
+      const varName = provider === 'groq' ? 'GROQ_API_KEY' : provider === 'gemini' ? 'GEMINI_API_KEY' : 'MISTRAL_API_KEY';
+      console.error(`[llm] ${provider} key rejected (${e.status}) — check ${varName} in server/.env`);
+      return await fallback(messages, userId);
+    }
+    if (e?.status === 404) {
+      console.error(`[llm] model not found (${e.message}) — check LLM_MODEL for provider=${provider}`);
+      return await fallback(messages, userId);
+    }
+    if (e?.status === 400 && /tool/i.test(e.message || '')) {
+      console.error(`[llm] model can't do tool calls (${e.message}) — pick a chat model in LLM_MODEL, using local fallback`);
+      return await fallback(messages, userId);
+    }
     throw e;
   }
 }
 
-async function chatWithToolsInner({ mistral, userId, messages }) {
+async function chatWithToolsInner({ userId, messages }) {
   const now = new Date();
   const monthNow = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const monthName = now.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
@@ -149,6 +168,7 @@ DATE CONTEXT: Today is ${longDate} (${dateStr}). Current month: ${monthName} (${
 HOW YOU TALK:
 - Like a friend texting: short, natural, casual. 1–3 lines max. Never paragraphs, never lectures, never bullet lists.
 - Emojis: 1–3 per reply, placed naturally where a human would put them. No emoji-salad.
+- Never use em-dashes (—) or en-dashes (–) anywhere. Use a period or comma instead.
 - NEVER dump raw stats like "Income ₹0 · Spent ₹40 · Available ₹-40". Translate numbers into a human sentence. NEVER print a negative amount like ₹-40. Say "₹40 in the red 📉" or "₹40 over".
 - No filler, no signature lines, no repeating your intro, no "just real talk 😎🚀", no lecturing ("check your bank app…"). If data is missing, say it in ONE line and move on.
 
@@ -164,16 +184,20 @@ DATA RULES:
 - If the user reports a spend WITHOUT an amount ("ate fuchka", "bought shoes"), do NOT answer stats. Ask one short question naming the item ("Fuchka 😋 How much was it?"). If they reply with just a number next, log it against that item.
 - "what's the date / today" → "Today is ${longDate} 📅". Nothing else.
 - Greetings / "what can you do" → one short intro with a logging example. Never a long canned paragraph.`;
-  const model = process.env.MISTRAL_MODEL || process.env.OPENAI_MODEL || 'mistral-small-latest';
 
-  let completion = await completeWithRetry(mistral, {
-    model,
+  // Replies are 2-3 lines; token budget is provider-aware inside llmChat.
+  let msg = await completeWithRetry({
     messages: [{ role:'system', content: system }, ...messages],
     tools: financeTools,
     toolChoice: 'auto',
     temperature: 0.7,
   });
-  let msg = completion.choices[0].message;
+  // Reasoning ate the whole budget and left no answer → local fallback
+  // (always correct) instead of an empty/dumb reply.
+  if (!msg.content && !msg.toolCalls?.length && msg.finishReason === 'length') {
+    console.warn('[llm] reply truncated to empty — using local fallback');
+    return await fallback(messages, userId);
+  }
 
   for (let i=0; i<3 && msg.toolCalls?.length; i++) {
     const toolResults = [];
@@ -184,19 +208,22 @@ DATA RULES:
       toolResults.push({ role:'tool', toolCallId: tc.id, name: tc.function.name, content: JSON.stringify(result) });
     }
     const toolMessages = toolResults.map(r=>({ role:'tool', toolCallId: r.toolCallId, name: r.name, content: r.content }));
-    const nextMessages = [{ role:'system', content: system }, ...messages, { role:'assistant', content: msg.content || '', toolCalls: msg.toolCalls }, ...toolMessages];
-    completion = await completeWithRetry(mistral, {
-      model,
+    // OpenAI-compatible APIs require snake_case tool_calls with type:'function'
+    // (Mistral's SDK accepted camelCase; Groq validates strictly and 400s).
+    const nextMessages = [{ role:'system', content: system }, ...messages,
+      { role:'assistant', content: msg.content || '',
+        tool_calls: (msg.toolCalls || []).map(tc => ({ id: tc.id, type:'function', function: tc.function })) },
+      ...toolMessages];
+    msg = await completeWithRetry({
       messages: nextMessages,
       temperature: 0.7,
     });
-    msg = completion.choices[0].message;
     if (!msg.toolCalls?.length) break;
   }
-  return { content: msg.content || 'Done.', toolCalls: msg.toolCalls || msg.tool_calls || [] };
+  return { content: msg.content || 'Done.', toolCalls: msg.toolCalls || [] };
 }
 
-// Local fallback (used when Mistral is down/rate-limited) — same human voice,
+// Local fallback (used when the LLM is down/rate-limited/missing) — same human voice,
 // real data from tools, zero filler.
 function roastTx({ amount: amt, category, sub }) {
   const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
