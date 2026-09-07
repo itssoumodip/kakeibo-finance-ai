@@ -57,10 +57,14 @@ export default function TransactionsPage(){
   }), [base, q, filter]);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form,setForm]=useState({ amount:'', type:'expense', category:'Food', subcategory:'', merchant:'', paymentMethod:'UPI' });
+  const todayISO = ()=> new Date().toISOString().slice(0,10);
+  const toISODate = (d:any)=>{ try{ return d ? new Date(d).toISOString().slice(0,10) : todayISO(); } catch{ return todayISO(); } };
+  const CATEGORIES = ['Food','Transport','Shopping','Bills','Entertainment','Health','Investment','Income','Other'];
+  const [form,setForm]=useState({ amount:'', type:'expense', category:'Food', subcategory:'', merchant:'', paymentMethod:'UPI', date: todayISO() });
 
-  const openAdd = ()=>{ setEditing(null); setForm({ amount:'', type:'expense', category:'Food', subcategory:'', merchant:'', paymentMethod:'UPI' }); setShowModal(true); };
-  const openEdit = (t:any)=>{ setEditing(t); setForm({ amount:String(Math.abs(t.amount)), type: t.plus ? 'income' : (t.cat==='Investment'?'investment':'expense'), category:t.cat, subcategory:t.raw?.subcategory||'', merchant:t.name, paymentMethod:t.raw?.paymentMethod||'UPI' }); setShowModal(true); };
+  const openAdd = ()=>{ setEditing(null); setForm({ amount:'', type:'expense', category:'Food', subcategory:'', merchant:'', paymentMethod:'UPI', date: todayISO() }); setShowModal(true); };
+  const openEdit = (t:any)=>{ setEditing(t); setForm({ amount:String(Math.abs(t.amount)), type: t.plus ? 'income' : (t.cat==='Investment'?'investment':'expense'), category:t.cat, subcategory:t.raw?.subcategory||'', merchant:t.raw?.merchant||t.name, paymentMethod:t.raw?.paymentMethod||'UPI', date: toISODate(t.raw?.date) }); setShowModal(true); };
+  const categoryOptions = CATEGORIES.includes(form.category) ? CATEGORIES : [form.category, ...CATEGORIES];
   const handleDelete = async(t:any)=>{
     if(!t._id || !getToken()){ showToast('Demo item — login to delete'); return; }
     if(!confirm(`Delete ${t.name}?`)) return;
@@ -71,8 +75,12 @@ export default function TransactionsPage(){
     try{ await fetch(`${import.meta.env.VITE_API_URL||'http://localhost:5000'}/api/recurring/${r._id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ active: !r.active }) }); fetchRecurring(); } catch(e:any){ showToast(e.message); }
   };
 
+  // NOTE: this container MUST stay flex+gap, never space-y. space-y applies
+  // margin-top to every child — including the fixed modal overlay below — which
+  // pushed the backdrop 20px down and left an undimmed strip at the viewport top.
+  // Flex gap spaces in-flow children identically but never touches fixed children.
   return (
-    <div ref={rootRef} className="space-y-5 pb-20">
+    <div ref={rootRef} className="flex flex-col gap-5 pb-20">
       {toast && <div className="fixed top-4 right-4 z-50 bg-zinc-900 text-white text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
       <div className="flex justify-between items-start">
         <div><h1 className="text-[30px] font-extrabold tracking-tight">Transactions</h1><p className="text-sm text-zinc-500">Manage and review your recent financial activity. {liveTx && <span className="text-emerald-600">● live</span>}</p></div>
@@ -120,16 +128,49 @@ export default function TransactionsPage(){
         </div>
       </div>
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-zinc-900/40 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-          <Card className="w-full max-w-md p-6 shadow-2xl" onClick={(e: any) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4"><h3 className="font-semibold">{editing ? 'Edit transaction' : 'Add transaction'}</h3><button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full neumorphic flex items-center justify-center"><X size={14} /></button></div>
-            <form className="space-y-3" onSubmit={async e => { e.preventDefault(); try{ const payload={ amount: Number(form.amount), type: form.type, category: form.category, subcategory: form.subcategory, merchant: form.merchant || form.subcategory || form.category, paymentMethod: form.paymentMethod }; if(editing && editing._id && getToken()){ await api.updateTx(editing._id, payload); showToast('Updated'); } else { if(getToken()){ await api.createTx(payload); showToast('Added'); } else { showToast('Demo — login to save'); }} doRefresh(); }catch(ex:any){ showToast(ex.message);} setShowModal(false); }}>
-              <input value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="Amount" type="number" required className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
-              <select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none"><option value="expense">Expense</option><option value="income">Income</option><option value="investment">Investment</option></select>
-              <input value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="Category e.g. Food" required className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
-              <input value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})} placeholder="Subcategory e.g. Pizza" className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
-              <input value={form.merchant} onChange={e=>setForm({...form,merchant:e.target.value})} placeholder="Merchant e.g. Rapido" className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
-              <input value={form.paymentMethod} onChange={e=>setForm({...form,paymentMethod:e.target.value})} placeholder="Payment UPI/Card/Cash" className="w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
+        <div className="fixed inset-0 z-50 bg-zinc-950/60 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+          <Card className="w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" style={{ boxShadow: '0 24px 64px -12px rgba(0,0,0,0.45), 0 4px 16px rgba(0,0,0,0.20)' }} onClick={(e: any) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-1"><h3 className="font-semibold">{editing ? 'Edit transaction' : 'Add transaction'}</h3><button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full neumorphic flex items-center justify-center"><X size={14} /></button></div>
+            {editing && <p className="text-xs text-zinc-500 mb-4">{editing.name} • {editing.cat} • {editing.date}</p>}
+            <form className="space-y-3" onSubmit={async e => { e.preventDefault(); try{ const payload={ amount: Number(form.amount), type: form.type, category: form.category, subcategory: form.subcategory, merchant: form.merchant || form.subcategory || form.category, paymentMethod: form.paymentMethod, date: form.date }; if(editing && editing._id && getToken()){ await api.updateTx(editing._id, payload); showToast('Updated'); } else { if(getToken()){ await api.createTx(payload); showToast('Added'); } else { showToast('Demo — login to save'); }} doRefresh(); }catch(ex:any){ showToast(ex.message);} setShowModal(false); }}>
+              <div>
+                <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Amount (₹)</label>
+                <input value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0" type="number" min="1" required className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Type</label>
+                <div className="mt-1 grid grid-cols-3 gap-2">
+                  {(['expense','income','investment'] as const).map(t => (
+                    <button type="button" key={t} onClick={()=>setForm({...form, type:t})} className={`py-2 rounded-full text-sm font-medium capitalize ${form.type===t ? 'bg-[#5f5b77] text-white' : 'neumorphic text-zinc-600'}`}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Category</label>
+                  <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none">
+                    {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Date</label>
+                  <input value={form.date} onChange={e=>setForm({...form,date:e.target.value})} type="date" required className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Detail <span className="normal-case font-normal">(e.g. Pizza, Rapido Bike)</span></label>
+                <input value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})} placeholder="What was it?" className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Merchant / name</label>
+                <input value={form.merchant} onChange={e=>setForm({...form,merchant:e.target.value})} placeholder="Shop or person" className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[11px] tracking-widest font-semibold text-zinc-500">Paid via</label>
+                <select value={form.paymentMethod} onChange={e=>setForm({...form,paymentMethod:e.target.value})} className="mt-1 w-full neumorphic-inset rounded-2xl px-4 py-3 text-sm outline-none">
+                  {['UPI','Card','Cash','Netbanking'].map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
               <button className="w-full py-3 rounded-full bg-[#5f5b77] text-white font-medium hover:bg-[#4a4760]">{editing ? 'Update' : 'Add transaction'}</button>
             </form>
           </Card>

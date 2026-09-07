@@ -26,6 +26,13 @@ const QUESTIONS = [
   "How's my budget?",
   'What did I spend on pizza?',
   'thanks',
+  'i eat fuchka',
+  { history: [
+    { role: 'user', content: 'i eat fuchka' },
+    { role: 'assistant', content: 'Fuchka 😋 How much was it?' },
+    { role: 'user', content: '40' },
+  ]},
+  'i buy chocholates for my mami cost me around 120 then i eat chips around 40 and then for travel it cost me around 90 in bike, and also i watched the new relese movie tht cost me around 190 and i buy shirt 700 and another shirt 700 and then one formal pant 700 and then one tshirt 700 and then two half pants around 200 each total 400 and mislanious add 500',
 ];
 
 // Automated robotic-tell flags (heuristics, not verdicts)
@@ -65,13 +72,15 @@ console.log(`\n=== LOOP 1: ${QUESTIONS.length} questions, temp user ${email} ===
 
 let flagCount = 0;
 for (const q of QUESTIONS) {
+  const msgs = typeof q === 'string' ? [{ role: 'user', content: q }] : q.history;
+  const label = typeof q === 'string' ? q : q.history.map(m => `${m.role}: ${m.content}`).join(' → ');
   try {
-    const r = await chatWithTools({ userId: uid, messages: [{ role: 'user', content: q }] });
+    const r = await chatWithTools({ userId: uid, messages: msgs });
     const flags = flagsFor(r.content || '');
     if (flags.length) flagCount += flags.length;
-    console.log(`Q: ${q}\nA: ${r.content}\n${flags.length ? '⚠️ FLAGS: ' + flags.join(', ') : '✅ clean'}\n---`);
+    console.log(`Q: ${label}\nA: ${r.content}\n${flags.length ? '⚠️ FLAGS: ' + flags.join(', ') : '✅ clean'}\n---`);
   } catch (e) {
-    console.log(`Q: ${q}\n💥 THREW: ${e?.message}\n---`);
+    console.log(`Q: ${label}\n💥 THREW: ${e?.message}\n---`);
     flagCount += 1;
   }
   await sleep(1500);

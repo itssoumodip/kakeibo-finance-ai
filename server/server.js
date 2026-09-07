@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import { connectDB } from './config/db.js';
 import authRoutes from './routes/auth.js';
 import txRoutes from './routes/transactions.js';
@@ -51,6 +52,19 @@ app.get('/api/health', (req,res)=>{
 });
 app.get('/', (req,res)=>res.json({ name:'Moneyy API', version:'1.0.0', health:'/api/health' }));
 
+// Atlas can briefly reconnect after a Wi-Fi or upstream network interruption.
+// Keep the health endpoint available, but do not let DB-backed requests sit in
+// Mongoose's operation buffer and later fail with an opaque timeout.
+app.use('/api', (req, res, next) => {
+  if (mongoose.connection.readyState === 1) return next();
+
+  res.set('Retry-After', '3');
+  return res.status(503).json({
+    error: 'Database is reconnecting. Please retry in a few seconds.',
+    code: 'DATABASE_RECONNECTING',
+  });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', txRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -68,7 +82,6 @@ const PORT = process.env.PORT || 5000;
 if (!process.env.MONGODB_URI) console.warn('⚠ MONGODB_URI not set - Copy server/.env.example -> server/.env');
 if (!process.env.JWT_SECRET) console.warn('⚠ JWT_SECRET not set - auth will fail. Set in server/.env');
 
-import mongoose from 'mongoose';
 app.set('mongoose', mongoose);
 
 let server;

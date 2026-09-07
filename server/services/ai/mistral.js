@@ -182,6 +182,7 @@ ROAST RULES (your signature, do it properly):
 DATA RULES:
 - NEVER invent numbers. Call a tool before answering anything about money. Empty result = "nothing logged" in one short line. Never a wrong month, never a lecture.
 - If the user reports a spend WITHOUT an amount ("ate fuchka", "bought shoes"), do NOT answer stats. Ask one short question naming the item ("Fuchka 😋 How much was it?"). If they reply with just a number next, log it against that item.
+- If the user lists MULTIPLE spends in one message, call createTransaction once per item, then confirm with a compact per-item list + total. NEVER log just the first amount.
 - "what's the date / today" → "Today is ${longDate} 📅". Nothing else.
 - Greetings / "what can you do" → one short intro with a logging example. Never a long canned paragraph.`;
 
@@ -269,27 +270,87 @@ async function fallback(messages, userId) {
     return { content: `Anytime 😎. Ping me when money moves.` };
   }
 
-  const FOOD_WORDS = /burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|roll|noodles|pasta|sandwich|cake|zomato|swiggy|food|cafe|coffee|chai|tea|juice|lunch|dinner|breakfast|snacks/i;
-  const SPEND_GATE = /(burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|zomato|swiggy|rapido|uber|ola|metro|auto|cab|invest|nifty|sip|gold|etf|shopping|shoe|shirt|cloth|dress|myntra|amazon|flipkart|movie|netflix|game|party|concert|cafe|coffee|chai|tea|juice|lunch|dinner|breakfast|food|electricity|recharge|emi|rent|bill)/i;
+  const FOOD_WORDS = /burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|roll|noodles|pasta|sandwich|cake|chocola|chochola|chips|biscuit|zomato|swiggy|food|cafe|coffee|chai|tea|juice|lunch|dinner|breakfast|snacks/i;
+  const SPEND_GATE = /(burger|pizza|fuchka|puchka|panipuri|chaat|samosa|momo|dosa|idli|biryani|thali|zomato|swiggy|rapido|uber|ola|metro|auto|cab|bike|bus|train|travel|petrol|invest|nifty|sip|gold|etf|shopping|shoe|shirt|pant|trouser|jean|kurta|cloth|dress|gift|myntra|amazon|flipkart|movie|netflix|game|party|concert|cafe|coffee|chai|tea|chocola|chochola|chips|juice|lunch|dinner|food|electricity|recharge|emi|misc|misl|rent|bill)/i;
   const SPEND_VERBS = /\b(eat|ate|eaten|had|drink|drank|buy|bought|spent|paid|order|ordered|took|watched)\b/i;
 
-  const logSpendFromText = async (amt, text) => {
+  const classifySpend = (text) => {
     const t = text.toLowerCase();
     let type='expense', category='Other', sub='Spend';
     if (/invest|nifty|sip|gold|etf|mf|mutual/i.test(t)) { type='investment'; category='Investment'; sub = /nifty/i.test(t) ? 'Nifty 50 SIP' : /gold/i.test(t) ? 'Gold ETF' : 'SIP'; }
-    else if (/rapido|uber|ola|metro|auto|cab|taxi/i.test(t)) { category='Transport'; sub = /rapido/i.test(t) ? 'Rapido' : /metro/i.test(t) ? 'Metro' : /auto/i.test(t) ? 'Auto' : 'Cab'; }
-    else if (FOOD_WORDS.test(t)) { category='Food'; sub = /burger/i.test(t) ? 'Burger' : /pizza/i.test(t) ? 'Pizza' : /coffee|chai|cafe|tea/i.test(t) ? 'Cafe' : (/fuchka|puchka|panipuri/i.test(t) ? 'Fuchka' : 'Food'); }
-    else if (/movie|netflix|game|concert|party/i.test(t)) { category='Entertainment'; sub='Fun'; }
-    else if (/shirt|shoe|amazon|flipkart|myntra|shopping|cloth|dress/i.test(t)) { category='Shopping'; sub='Shopping'; }
+    // NOTE: short tokens (ola/cab/bus/auto/metro/train) are word-anchored —
+    // unanchored /ola/ hilariously matched "chOcolAtes" and filed it under Cab.
+    else if (/rapido|uber|\bola\b|\bmetro\b|\bauto\b|\bcab\b|taxi|bike|\bbus\b|\btrain\b|travel|petrol/i.test(t)) { category='Transport'; sub = /rapido/i.test(t) ? 'Rapido' : /metro/i.test(t) ? 'Metro' : /auto/i.test(t) ? 'Auto' : /bike/i.test(t) ? 'Bike' : 'Cab'; }
+    else if (FOOD_WORDS.test(t)) { category='Food'; sub = /burger/i.test(t) ? 'Burger' : /pizza/i.test(t) ? 'Pizza' : /coffee|chai|cafe|tea/i.test(t) ? 'Cafe' : (/fuchka|puchka|panipuri/i.test(t) ? 'Fuchka' : (/chocola|chochola/i.test(t) ? 'Chocolates' : (/chips/i.test(t) ? 'Chips' : 'Food'))); }
+    else if (/movie|netflix|game|concert|party/i.test(t)) { category='Entertainment'; sub = /movie/i.test(t) ? 'Movie' : 'Fun'; }
+    else if (/shirt|pant|trouser|jean|kurta|shoe|amazon|flipkart|myntra|shopping|cloth|dress/i.test(t)) { category='Shopping'; sub='Shopping'; }
     else if (/rent|bill|electricity|recharge|emi/i.test(t)) { category='Bills'; sub='Bills'; }
+    else if (/misc|misl|other|extra|sundry/i.test(t)) { sub='Misc'; }
+    return { type, category, sub };
+  };
+
+  const logSpendFromText = async (amt, text) => {
+    const { type, category, sub } = classifySpend(text);
     await executeTool('createTransaction', { amount: amt, type, category, subcategory: sub, merchant: sub }, userId);
     if (type === 'investment') return { content: `Logged ${inr(amt)} → ${sub} ⚡ Future you says thanks. Keep the streak going.` };
     if (category === 'Bills') return { content: `Logged ${inr(amt)} for ${sub} ✅ Adulting done right.` };
     return { content: `Logged ${inr(amt)} · ${sub} ✅${roastTx({ amount: amt, category, sub })}` };
   };
 
+  // Split "chocolates 120 then chips 40 and bike 90" into per-item pairs.
+  // First cut on strong boundaries (then/also/plus/commas) so each amount's
+  // context can't bleed into the NEXT item ("chips 40 and then for travel…"
+  // must not inherit "travel"). Bare "and" is NOT a boundary ("dal and
+  // roti 100" stays one spend).
+  // Skips a per-unit price when an explicit total follows ("200 each total 400"),
+  // merging its context into the total so "half pants" still classifies.
+  const splitSpends = (text) => {
+    const segs = text.split(/\bthen\b|\balso\b|\bplus\b|,/i);
+    const raw = [];
+    for (const seg of segs) {
+      const ms = [...seg.matchAll(/₹?\s?(\d{2,6})/g)];
+      ms.forEach((m, i) => {
+        const ctxStart = i === 0 ? 0 : ms[i-1].index + ms[i-1][0].length;
+        const nextStart = i + 1 < ms.length ? ms[i+1].index : seg.length;
+        raw.push({
+          amount: Number(m[1]),
+          context: seg.slice(ctxStart, m.index),
+          after: seg.slice(m.index + m[0].length, nextStart),
+        });
+      });
+    }
+    for (let i = 0; i < raw.length - 1; i++) {
+      if (/\beach\b/i.test(raw[i].after) && /\btotal\b/i.test(raw[i+1].context)) {
+        raw[i+1].context = raw[i].context + ' ' + raw[i+1].context;
+        raw[i].skip = true;
+      }
+    }
+    return raw.filter(p => !p.skip);
+  };
+
   const amtMatch = lastRaw.match(/₹?\s?(\d{2,6})/);
   const amt = amtMatch ? Number(amtMatch[1]) : null;
+  const pairs = amt ? splitSpends(lastRaw) : [];
+  if (pairs.length > 1) {
+    // Multi-spend message: log EVERY item, confirm with list + total. Never first-amount-only.
+    const logged = [];
+    for (const p of pairs) {
+      const c = classifySpend(p.context + ' ' + p.after.slice(0, 40));
+      await executeTool('createTransaction', { amount: p.amount, type: c.type, category: c.category, subcategory: c.sub, merchant: c.sub }, userId);
+      logged.push({ ...c, amount: p.amount });
+    }
+    const total = logged.reduce((s, l) => s + l.amount, 0);
+    const groups = new Map();
+    for (const l of logged) {
+      const k = l.category + '|' + l.sub;
+      const g = groups.get(k) || { sub: l.sub, sum: 0, count: 0 };
+      g.sum += l.amount; g.count += 1; groups.set(k, g);
+    }
+    const lines = [...groups.values()].map(g => g.count > 1 ? `· ${g.sub} ${inr(g.sum)} (${g.count} items)` : `· ${g.sub} ${inr(g.sum)}`);
+    const star = logged.filter(l => /Food|Shopping|Entertainment|Transport/.test(l.category)).sort((a, b) => b.amount - a.amount)[0];
+    const roast = star ? roastTx({ amount: star.amount, category: star.category, sub: star.sub }) : '';
+    return { content: `Logged ${logged.length} spends · ${inr(total)} total ✅\n${lines.join('\n')}${roast}` };
+  }
   if (amt && SPEND_GATE.test(last)) {
     return await logSpendFromText(amt, lastRaw);
   }
